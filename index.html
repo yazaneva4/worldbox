@@ -187,6 +187,24 @@ body{
 }
 #tooldesc b{color:var(--accent)}
 
+/* culture (faction + traits) picker */
+#culturebox{
+  padding:7px 8px;border-top:2px solid var(--border);background:var(--panel-2);
+}
+.cbtitle{font-size:10px;color:var(--text);font-weight:bold;margin-bottom:5px}
+.cbhint{color:var(--text-dim);font-weight:normal;font-size:8.5px}
+.cbrow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px}
+.cbrow:last-child{margin-bottom:0}
+.chip{
+  font-size:9px;padding:3px 6px;border-radius:10px;cursor:pointer;
+  background:var(--panel-3);border:1px solid var(--border);color:var(--text-dim);
+  display:flex;align-items:center;gap:3px;white-space:nowrap;
+}
+.chip:hover{background:#4a4d55;color:var(--text)}
+.chip.on{background:#1d3540;border-color:var(--accent);color:var(--accent)}
+.chip.faction.on{background:#2a2333;border-color:var(--gold);color:var(--gold)}
+.chip .cd{font-size:12px;line-height:1}
+
 /* ====================  CENTER VIEWPORT  ================================== */
 #center{
   grid-area:center;
@@ -361,6 +379,11 @@ body{
   <div id="leftpanel">
     <h1 class="pixel">⚡ God Powers</h1>
     <div class="godpowers" id="godpowers"><!-- tools injected by UIManager --></div>
+    <div id="culturebox">
+      <div class="cbtitle">🧬 Culture <span class="cbhint">applied to new civilizations</span></div>
+      <div class="cbrow" id="factionRow"><!-- faction path buttons --></div>
+      <div class="cbrow" id="traitRow"><!-- trait chips --></div>
+    </div>
     <div id="brushbox">
       <label>Brush <input type="range" id="brushSize" min="0" max="4" value="1"><span id="brushVal">1</span></label>
     </div>
@@ -513,8 +536,119 @@ const BIOME = {
   ROCK:6, ASH:7, LAVA:8, CRATER:9, SNOW:10, DIRT:11
 };
 const RES = { NONE:0, TREE:1, STONE:2, FLOWER:3, BUSH:4, PINE:5 };
-const STRUCT = { NONE:0, HOUSE:1, FARM:2, MINE:3, ROAD:4, TOWNHALL:5, RUIN:6 };
-const RACE = { HUMAN:"human", ORC:"orc", ELF:"elf", MONSTER:"monster" };
+// STRUCT: numeric ids stored on each tile; the renderer switches on these.
+const STRUCT = {
+  NONE:0, HOUSE:1, FARM:2, MINE:3, ROAD:4, TOWNHALL:5, RUIN:6,
+  TENT:7, PALACE:8, STOREHOUSE:9, WINDMILL:10, BARRACKS:11, WATCHTOWER:12,
+  WALL:13, SHRINE:14, MAGE_TOWER:15,
+};
+const RACE = { HUMAN:"human", ORC:"orc", ELF:"elf", MONSTER:"monster", SKELETON:"skeleton" };
+
+/* --------------------------------------------------------------------------
+   2b.  ASYMMETRY MODEL — Factions, Traits, Tech/Magic trees, Structure catalog
+        These registries are pure data; the AI and UI read from them so new
+        content is added by extending a table, never by branching logic.
+   -------------------------------------------------------------------------- */
+
+// The civilization path (asymmetry axis) a kingdom follows.
+const FACTION = { NEUTRAL:"neutral", TECH:"tech", MAGIC:"magic" };
+const FACTION_META = {
+  [FACTION.NEUTRAL]:{ name:"Neutral",  icon:"⚖️", color:"#9aa0ac" },
+  [FACTION.TECH]:   { name:"Industrial",icon:"⚙️", color:"#ff9f4f" },
+  [FACTION.MAGIC]:  { name:"Arcane",   icon:"✨", color:"#c58cff" },
+};
+
+/* Traits are personality/buff data. Each contributes to named "channels" the
+   AI reads (as additive modifiers) plus boolean tags for hard switches.
+   `opp` lists mutually-exclusive traits (can't stack with these). */
+const TRAITS = {
+  pacifist:  { name:"Pacifist",  icon:"🕊️", color:"#7ecbff",
+    desc:"Shuns war; pours effort into building and research.",
+    mods:{ aggression:-0.9, research:+0.4, build:+0.3 }, tags:["no_first_strike"], opp:["savage"] },
+  genius:    { name:"Genius",    icon:"🧠", color:"#c58cff",
+    desc:"Researches technology and upgrades far faster.",
+    mods:{ research:+1.0, build:+0.5, gather:+0.2 }, tags:["auto_upgrade"], opp:[] },
+  toxic:     { name:"Toxic",     icon:"☣️", color:"#9ecb3a",
+    desc:"Poisons the land they walk; immune to acid; low morale.",
+    mods:{ aggression:+0.3, happiness:-0.3 }, tags:["poison_touch","acid_immune"], opp:[] },
+  savage:    { name:"Savage",    icon:"🪓", color:"#ff5c5c",
+    desc:"Raises armies and expands borders aggressively.",
+    mods:{ aggression:+1.0, military:+0.9, expand:+0.8, research:-0.5 }, tags:["raid_happy"], opp:["pacifist"] },
+  fertile:   { name:"Fertile",   icon:"🍼", color:"#ff9ec4",
+    desc:"Reproduces quickly and lives longer; large families.",
+    mods:{ reproduce:+1.2, maxAge:+0.15 }, tags:[], opp:[] },
+  sturdy:    { name:"Sturdy",    icon:"🛡️", color:"#8fb7ff",
+    desc:"Tougher bodies; resist damage and starvation.",
+    mods:{ defense:+0.6, health:+0.4 }, tags:["hardy"], opp:[] },
+  industrious:{ name:"Industrious",icon:"⛏️", color:"#ffcf5c",
+    desc:"Gather and build far faster; hoard resources.",
+    mods:{ gather:+0.8, build:+0.6 }, tags:[], opp:[] },
+};
+const TRAIT_IDS = Object.keys(TRAITS);
+const EMPTY_TRAITS = Object.freeze([]);   // shared empty result (avoids per-tick alloc)
+
+/* Aggregate a modifier channel across a set of trait ids (additive). */
+function traitMod(ids, channel){
+  let s=0; for(const id of ids){ const t=TRAITS[id]; if(t && t.mods[channel]!=null) s+=t.mods[channel]; } return s;
+}
+function traitHas(ids, tag){
+  for(const id of ids){ const t=TRAITS[id]; if(t && t.tags.includes(tag)) return true; } return false;
+}
+
+/* Asymmetric progression. Each node gates buildable structures ('unlocks')
+   and abilities ('grants'); 'cost' is in research points; order = tier. */
+const TECH_TREE = {
+  [FACTION.TECH]: [
+    { id:"farming",    name:"Agriculture",   cost:0,   unlocks:["tent","farm"] },
+    { id:"masonry",    name:"Masonry",       cost:30,  unlocks:["house","storehouse","watchtower"] },
+    { id:"industry",   name:"Industry",      cost:90,  unlocks:["windmill","mine","barracks"], grants:["militia"] },
+    { id:"gunpowder",  name:"Gunpowder",     cost:180, unlocks:["palace"], grants:["ranged"] },
+    { id:"mechanized", name:"Mechanization", cost:300, unlocks:[], grants:["siege"] },
+  ],
+  [FACTION.MAGIC]: [
+    { id:"herbalism",  name:"Herbalism",     cost:0,   unlocks:["tent","farm"] },
+    { id:"runes",      name:"Runecraft",     cost:30,  unlocks:["house","shrine"] },
+    { id:"conjuring",  name:"Conjuring",     cost:90,  unlocks:["mage_tower"], grants:["summon_skeleton","magic_bolt"] },
+    { id:"sorcery",    name:"Sorcery",       cost:200, unlocks:["palace"], grants:["mass_raise"] },
+  ],
+  [FACTION.NEUTRAL]: [
+    { id:"basics",     name:"Survival",      cost:0,   unlocks:["tent","farm","house"] },
+    { id:"crafts",     name:"Craftsmanship", cost:60,  unlocks:["storehouse","mine","watchtower","barracks"] },
+  ],
+};
+
+/* Structure catalog: single source of truth. `sid` maps to the STRUCT enum
+   stored on tiles; `cost` is resources; `up` is the upgrade target (housing
+   chain tent→house→palace); effect fields feed the economy each tick. */
+const STRUCTURES = {
+  townhall:   { sid:STRUCT.TOWNHALL,  name:"Town Hall",  cap:3 },
+  tent:       { sid:STRUCT.TENT,      name:"Tent",       cap:2,  cost:{wood:5},           up:"house",  hp:80  },
+  house:      { sid:STRUCT.HOUSE,     name:"House",      cap:5,  cost:{wood:15,stone:4},  up:"palace", hp:120 },
+  palace:     { sid:STRUCT.PALACE,    name:"Palace",     cap:12, cost:{wood:40,stone:30}, up:null,     hp:220 },
+  farm:       { sid:STRUCT.FARM,      name:"Farm",       food:0.6, cost:{wood:8},  hp:100 },
+  windmill:   { sid:STRUCT.WINDMILL,  name:"Windmill",   food:1.4, cost:{wood:25,stone:10}, hp:120 },
+  mine:       { sid:STRUCT.MINE,      name:"Mine",       stone:0.5, cost:{wood:10}, hp:120 },
+  storehouse: { sid:STRUCT.STOREHOUSE,name:"Storehouse", store:250, cost:{wood:20}, hp:120 },
+  barracks:   { sid:STRUCT.BARRACKS,  name:"Barracks",   trains:"soldier", cost:{wood:20,stone:15}, hp:150 },
+  watchtower: { sid:STRUCT.WATCHTOWER,name:"Watchtower", defense:0.4, cost:{wood:15,stone:10}, hp:160 },
+  wall:       { sid:STRUCT.WALL,      name:"Wall",       blocks:true, cost:{stone:6}, hp:400 },
+  shrine:     { sid:STRUCT.SHRINE,    name:"Shrine",     mana:0.6, cost:{wood:15}, hp:110 },
+  mage_tower: { sid:STRUCT.MAGE_TOWER,name:"Mage Tower", trains:"mage", mana:1.2, cost:{wood:30,stone:20}, hp:150 },
+};
+// reverse lookup: STRUCT enum -> catalog key (for recount & rendering labels)
+const STRUCT_KEY = {}; for(const k in STRUCTURES) STRUCT_KEY[STRUCTURES[k].sid]=k;
+
+let KINGDOM_ID = 1;
+/* Banner colour for a kingdom, blending race hue with a per-id rotation. */
+function pickBannerColor(race,id){
+  const pal = {
+    [RACE.HUMAN]:["#4fc3f7","#5b8cff","#c95fff","#ff9f4f","#ffcf5c"],
+    [RACE.ORC]:["#7ed957","#9ecb3a","#5cae3a"],
+    [RACE.ELF]:["#5ce0b0","#7be07b","#a0e05c"],
+    [RACE.SKELETON]:["#d9d4c4","#b9c2cc","#cfc8b0"],
+  };
+  const arr = pal[race]||["#cccccc"]; return arr[id % arr.length];
+}
 
 /* Palette used by the renderer for each biome. Two shades give cheap texture. */
 const BIOME_COL = {
@@ -700,51 +834,138 @@ class Entity{
     this.isLeader = false;
     this.cooldown = 0;                // generic action timer (ticks)
     this.legendYears = 0;            // survival counter for hero legends
-    this.speed = race===RACE.MONSTER?1.5:(race===RACE.ORC?1.25:1.0); // tiles/sec base
+    this.speed = race===RACE.MONSTER?1.5:(race===RACE.ORC?1.25:(race===RACE.SKELETON?1.1:1.0)); // tiles/sec base
     this.reproCd = rint(makeRNG((this.id*99)|0),8,16);
     this.wanderCd = 0;
+
+    // --- asymmetry / trait system ---
+    this.faction   = FACTION.NEUTRAL;  // civ path this creature follows
+    this.traits    = [];               // personal trait ids (∪ kingdom culture)
+    this.role      = "civilian";       // civilian | worker | soldier | mage | leader
+    this.equipment = null;             // "musket" | "staff" | null → combat & sprite
+    this.mana      = 0;                // spell resource for casters
+    this.attack    = 6;                // base melee damage
+    this.range     = 0;                // >0 = ranged/caster attack radius
+    this.xp        = 0;                // veterancy toward legendary units
+    this.target    = null;             // current combat/AI target
+    this.allyKing  = null;             // kingdom id a summoned unit fights for (skeletons)
+    this.decay     = 0;                // undead slow decay accumulator
+
+    // undead don't hunger and can't reproduce
+    if(race===RACE.SKELETON){ this.maxAge = 9999; this.hunger = 0; this.attack = 10; }
   }
+
+  // Effective traits = personal + home kingdom's shared culture.
+  get kingdom(){ return this.settlement ? this.settlement.kingdom : null; }
+  effTraits(){
+    const k=this.kingdom;
+    // fast path: no personal traits and no realm culture → shared empty array
+    if(this.traits.length===0 && (!k || k.culture.length===0)) return EMPTY_TRAITS;
+    if(!k || k.culture.length===0) return this.traits;
+    return [...new Set([...this.traits, ...k.culture])];
+  }
+  mod(channel){ return traitMod(this.effTraits(), channel); }   // additive modifier
+  has(tag){ return traitHas(this.effTraits(), tag); }
 }
 
 /* --------------------------------------------------------------------------
-   6.  SETTLEMENT  —  a village that can grow into a kingdom.
+   6.  KINGDOM (political) ⟂ SETTLEMENT (physical town)
+       A Kingdom is the political entity: name, faction/culture, tech, diplomacy
+       and aggregate metrics. It owns one or more Settlements (towns). Entities
+       belong to a Settlement and, through it, to a Kingdom. Splitting these two
+       lets diplomacy, research and culture live at the realm level while towns
+       keep their own buildings and stockpile — and lets future rebellions carve
+       a kingdom into smaller realms without a data migration.
    -------------------------------------------------------------------------- */
-let SETTLE_ID = 1;
-class Settlement{
-  constructor(race,cx,cy,foundedYear){
-    this.id = SETTLE_ID++;
+class Kingdom{
+  constructor(race,faction,foundedYear){
+    this.id = KINGDOM_ID++;
     this.race = race;
-    this.cx = cx; this.cy = cy;                 // town centre (tile)
-    this.name = villageName();
-    this.kingdom = kingdomName();               // realm/dynasty name
-    this.founded = foundedYear;
-    this.members = [];                          // Entity[]
-    this.res = { food: 30, wood: 20, stone: 10 };
-    this.happiness = 70;                        // 0..100
-    this.territory = new Set();                 // packed tile indices
-    this.houses = 0; this.farms = 0; this.mines = 0;
-    this.leader = null;                         // Entity
+    this.faction = faction || FACTION.NEUTRAL;
+    this.name = kingdomName();
     this.dynasty = choice(_nameRng,NAMES.first)+" Dynasty";
-    this.level = 1;                             // hamlet->village->town->city->kingdom
-    this.color = this._pickColor();
-    this.buildCd = 0;
-    this.relations = {};                        // settleId -> -100..100
-    this.tradeCd = rint(_nameRng, 20, 40);
+    this.culture = [];                           // cultural trait ids (inherited by members)
+    this.color = pickBannerColor(race,this.id);
+    this.founded = foundedYear;
+
+    // asymmetric progression
+    this.research = 0;                           // accumulated research points
+    this.tech = new Set();                       // unlocked tech-node ids
+    this.unlocked = new Set();                   // buildable structure keys
+    this.powers = new Set();                     // granted abilities (ranged, summon_skeleton…)
+    this._applyTech(0);                          // unlock the tier-0 node immediately
+
+    // holdings + aggregate metrics (recomputed each tick)
+    this.settlements = [];                       // Settlement[]
+    this.metrics = { population:0, military:0, homeless:0, homelessRate:0, crime:0,
+                     food:0, wood:0, stone:0, mana:0 };
+
+    // diplomacy
+    this.relations = {};                         // kingdomId -> -100..100
+    this.allies = new Set();
+    this.atWar = new Set();
+    this.wars = 0;
+    this.unrest = 0;                             // 0..100 → future rebellions
     this.destroyed = false;
     this.peakPop = 0;
-    this.wars = 0;
   }
-  _pickColor(){
-    const pal = {
-      [RACE.HUMAN]:["#4fc3f7","#5b8cff","#c95fff","#ff9f4f"],
-      [RACE.ORC]:["#7ed957","#9ecb3a","#5cae3a"],
-      [RACE.ELF]:["#5ce0b0","#7be07b","#a0e05c"],
-    };
-    const arr = pal[this.race]||["#cccccc"];
-    return arr[SETTLE_ID % arr.length];
+  get tree(){ return TECH_TREE[this.faction] || TECH_TREE[FACTION.NEUTRAL]; }
+  get techTier(){ return this.tech.size; }
+  nextTech(){ return this.tree.find(n=>!this.tech.has(n.id)) || null; }
+  hasPower(p){ return this.powers.has(p); }
+  canBuild(key){ return this.unlocked.has(key); }
+  /* Unlock every tech node whose cost is met by current research points. */
+  _applyTech(){
+    for(const node of this.tree){
+      if(this.tech.has(node.id)) continue;
+      if(this.research >= node.cost){
+        this.tech.add(node.id);
+        (node.unlocks||[]).forEach(u=>this.unlocked.add(u));
+        (node.grants ||[]).forEach(g=>this.powers.add(g));
+        if(this._game && this.settlements.length){
+          const cap=this.settlements[0];
+          this._game.chronicle.log(`${FACTION_META[this.faction].icon} ${this.name} researches <b>${node.name}</b>.`,"found");
+        }
+      } else break; // tree is ordered; stop at first unaffordable node
+    }
   }
+  // aggregate helpers
+  get pop(){ let p=0; for(const s of this.settlements) if(!s.destroyed) p+=s.pop; return p; }
+  get capital(){ return this.settlements.find(s=>!s.destroyed) || this.settlements[0] || null; }
+  get alive(){ return this.settlements.some(s=>!s.destroyed); }
+  cultureMod(ch){ return traitMod(this.culture,ch); }
+}
+
+let SETTLE_ID = 1;
+class Settlement{
+  constructor(kingdom,cx,cy,foundedYear){
+    this.id = SETTLE_ID++;
+    this.kingdom = kingdom;                      // ← owning political entity
+    this.cx = cx; this.cy = cy;                  // town centre (tile)
+    this.name = villageName();
+    this.founded = foundedYear;
+    this.members = [];                           // Entity[]
+    this.res = { food: 30, wood: 20, stone: 10, mana: 0 };
+    this.storeCap = 300;                         // raised by storehouses
+    this.happiness = 70;                         // 0..100
+    this.territory = new Set();                  // packed tile indices
+    // building tallies keyed by STRUCTURES catalog id (replaces houses/farms/mines)
+    this.buildings = {};
+    for(const k in STRUCTURES) this.buildings[k]=0;
+    this.leader = null;                          // Entity
+    this.buildCd = 0;
+    this.tradeCd = rint(_nameRng, 20, 40);
+    this.destroyed = false;
+  }
+  // convenience passthroughs to the kingdom
+  get race(){ return this.kingdom.race; }
+  get faction(){ return this.kingdom.faction; }
+  get color(){ return this.kingdom.color; }
   get pop(){ return this.members.length; }
-  get capacity(){ return 3 + this.houses*4; }
+  get capacity(){
+    const b=this.buildings;
+    return 3 + b.tent*STRUCTURES.tent.cap + b.house*STRUCTURES.house.cap + b.palace*STRUCTURES.palace.cap;
+  }
   get title(){
     const p=this.pop;
     if(p>=45) return "Kingdom";
@@ -904,15 +1125,22 @@ class EntityManager{
       e.age += 1/CONFIG.TICKS_PER_YEAR * 4;   // ~4 tick-years per game-year feel
       e.legendYears += 1/CONFIG.TICKS_PER_YEAR;
       const tile=w.get(e.x|0,e.y|0);
-      const foodShort = e.settlement ? e.settlement.res.food<=0 : true;
-      e.hunger += (e.settlement? (foodShort?4:-6) : 2.2);
-      if(this.game.sim.season===3) e.hunger += 0.6; // winter bites
-      e.hunger = clamp(e.hunger,0,120);
-      if(e.hunger>=100) e.hp -= 4;                    // starving
+      const undead = e.race===RACE.SKELETON;
+      if(!undead){
+        const foodShort = e.settlement ? e.settlement.res.food<=0 : true;
+        e.hunger += (e.settlement? (foodShort?4:-6) : 2.2);
+        if(this.game.sim.season===3) e.hunger += 0.6; // winter bites
+        const starveResist = e.has("hardy")?0.5:1;    // Sturdy resist starvation
+        e.hunger = clamp(e.hunger,0,120);
+        if(e.hunger>=100) e.hp -= 4*starveResist;
+        if(e.has("hardy") && e.hp<100 && e.hunger<80) e.hp=Math.min(120,e.hp+0.4); // Sturdy regen
+      }
       if(tile){
-        if(tile.biome===BIOME.LAVA) e.hp -= 40;
+        if(tile.biome===BIOME.LAVA && !undead) e.hp -= 40;
         if(tile.burn>0.3) e.hp -= 6;
-        if(tile.acid>0 && (e.race===RACE.HUMAN||e.race===RACE.ORC)) e.hp -= 1;
+        if(tile.acid>0 && !undead && !e.has("acid_immune") && (e.race===RACE.HUMAN||e.race===RACE.ORC)) e.hp -= 1;
+        // Toxic entities poison the ground they tread
+        if(e.has("poison_touch")){ tile.acid=Math.max(tile.acid,3); }
       }
       if(e.cooldown>0)e.cooldown--;
 
@@ -927,6 +1155,7 @@ class EntityManager{
         case RACE.ELF:   this._civilAI(e,false); break;
         case RACE.ORC:   this._orcAI(e); break;
         case RACE.MONSTER:this._monsterAI(e); break;
+        case RACE.SKELETON:this._skeletonAI(e); break;
       }
     }
   }
@@ -934,7 +1163,7 @@ class EntityManager{
   _onDeath(e){
     const s=e.settlement;
     if(e.isLeader && s && !s.destroyed){
-      this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.dynasty} mourns.`,"death");
+      this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.kingdom.dynasty} mourns.`,"death");
       s.leader=null; // succession handled in settlement tick
     } else if(e.legendYears>60){
       this.game.chronicle.log(`⚰️ The legendary ${e.name} died at ${Math.floor(e.age)} after ${Math.floor(e.legendYears)} years of wandering.`,"death");
@@ -945,9 +1174,11 @@ class EntityManager{
     // corpse -> nothing; occasionally leaves the tile as it was
   }
 
-  /* Humans & Elves: gather, farm, build, reproduce, settle. */
+  /* Humans & Elves: soldiers/mages fight; civilians gather, farm, build, settle. */
   _civilAI(e,isHuman){
     const w=this.game.world;
+    // Warriors and casters follow military behaviour regardless of home status.
+    if(e.role==="soldier"||e.role==="mage"){ this._militaryAI(e); return; }
     // Homeless civilian -> try to join or found a settlement.
     if(!e.settlement){
       this._seekOrFoundSettlement(e,isHuman);
@@ -972,27 +1203,28 @@ class EntityManager{
 
   _seekOrFoundSettlement(e,isHuman){
     const w=this.game.world;
-    // Look for an existing friendly settlement to join.
+    // Look for an existing friendly settlement (same race, compatible path) to join.
     let best=null,bd=1e9;
     for(const s of this.game.settlements.list){
       if(s.destroyed)continue;
-      if(isHuman && s.race!==RACE.HUMAN) continue;
-      if(!isHuman && s.race!==RACE.ELF) continue;
+      if(s.race!==e.race) continue;
+      if(e.faction!==FACTION.NEUTRAL && s.faction!==FACTION.NEUTRAL && s.faction!==e.faction) continue;
       if(s.pop>=s.capacity+2) continue;
       const d=dist2(e.x,e.y,s.cx,s.cy);
       if(d<bd){bd=d;best=s;}
     }
-    if(best && bd<26*26){
+    if(best && bd<32*32){
       this.game.settlements.addMember(best,e);
       e.tx=best.cx; e.ty=best.cy;
       return;
     }
-    // Otherwise wander; if on good ground and lucky, found a new settlement.
+    // Otherwise wander; only found a new kingdom if none stands nearby (keeps
+    // realms consolidated rather than every wanderer starting their own).
     const tile=w.get(e.x|0,e.y|0);
     const goodGround = tile && tile.walkable && tile.fertility>0.4 &&
         tile.structure===STRUCT.NONE && (tile.biome===BIOME.GRASS||tile.biome===BIOME.FERTILE||tile.biome===BIOME.FOREST_FLOOR||tile.biome===BIOME.DIRT);
-    if(goodGround && e.cooldown<=0 && Math.random()<0.05 && e.age>1){
-      this.game.settlements.found(e,isHuman?RACE.HUMAN:RACE.ELF);
+    if(goodGround && e.cooldown<=0 && Math.random()<0.03 && e.age>1){
+      this.game.settlements.found(e);
       return;
     }
     this._wander(e,6);
@@ -1000,16 +1232,17 @@ class EntityManager{
 
   _assignJob(e,isHuman){
     const s=e.settlement, w=this.game.world;
+    const b=s.buildings;
     const need = {
       food: s.res.food < s.pop*3,
-      wood: s.res.wood < 20 + s.houses*4,
-      stone:s.res.stone < 12 + s.mines*3,
+      wood: s.res.wood < 20 + b.house*4 + b.palace*8,
+      stone:s.res.stone < 12 + b.mine*3,
     };
     // Elves are efficient foresters and prefer planting/wood; humans balance.
     let job;
     if(need.food && (isHuman? true : Math.random()<0.6)) job="food";
     else if(need.wood) job="wood";
-    else if(need.stone && this._hasWasteland(s)) job="stone";
+    else if(need.stone && this.game.settlements._nearRock(s)) job="stone";
     else if(!isHuman && Math.random()<0.4) job="plant";       // elves reforest
     else job="wander";
 
@@ -1040,7 +1273,8 @@ class EntityManager{
     const reached = Math.abs(e.x-(tx+0.5))<0.55 && Math.abs(e.y-(ty+0.5))<0.55;
     if(!reached) return;
     const t=w.get(tx,ty); if(!t){ e.job="idle"; return; }
-    const eff = isHuman?1:(e.race===RACE.ELF?1.35:1); // elves gather efficiently
+    // elves gather efficiently; Industrious/Genius culture boosts everyone
+    const eff = (isHuman?1:(e.race===RACE.ELF?1.35:1)) * (1+Math.max(0,e.mod("gather")));
 
     if(e.job==="wood"){
       if(t.resource===RES.TREE||t.resource===RES.PINE){
@@ -1113,6 +1347,87 @@ class EntityManager{
     this._stepToward(e);
   }
 
+  /* --- Military AI: soldiers & mages of a kingdom. Ranged units strike from
+     distance; mages cast bolts and (with Conjuring) summon skeleton allies. */
+  _militaryAI(e){
+    const w=this.game.world, k=e.kingdom;
+    const enemy=this._nearestHostile(e,9);
+    if(enemy){
+      e.tx=enemy.x|0; e.ty=enemy.y|0;
+      const rr=e.range>0?e.range:0.95;
+      if(dist2(e.x,e.y,enemy.x,enemy.y)<=rr*rr && e.cooldown<=0){
+        enemy.hp-=e.attack; e.cooldown=e.range>0?3:2; e.xp++;
+        const col=e.role==="mage"?"#c58cff":(e.equipment==="musket"?"#ffe08a":"#ff5c5c");
+        this.game.effects.spawn("hit",enemy.x,enemy.y,col);
+        if(e.range>0) this.game.effects.spawn(e.role==="mage"?"bolt":"shot",e.x,e.y,col,0,enemy.x,enemy.y);
+        if(e.role==="mage") e.mana=Math.max(0,e.mana-2);
+      }
+    } else {
+      // mage summons a skeleton to fight for the realm
+      if(e.role==="mage" && k && k.hasPower("summon_skeleton") && e.mana>=15 && Math.random()<0.03){
+        e.mana-=15;
+        const sk=this.game.entities.spawn(RACE.SKELETON,e.x,e.y);
+        if(sk){ sk.allyKing=k.id; sk.faction=k.faction; this.game.effects.spawn("bolt",e.x,e.y,"#c58cff"); }
+      }
+      if(e._raider){
+        // raiders sack their target town's buildings
+        const st=this._nearestStructure(e,6);
+        if(st){ e.tx=st.x; e.ty=st.y;
+          if(dist2(e.x,e.y,st.x+0.5,st.y+0.5)<1.2 && e.cooldown<=0){
+            const tile=w.get(st.x,st.y); tile.health-=e.attack*1.5; e.cooldown=2;
+            this.game.effects.spawn("hit",st.x+0.5,st.y+0.5,"#ff9f4f");
+            if(tile.health<=0) this.game.settlements.destroyStructure(st.x,st.y);
+          }
+        } else { e.tx=e._raider.cx; e.ty=e._raider.cy; }
+      } else {
+        // garrison patrol around home territory
+        const s=e.settlement;
+        if(s && Math.random()<0.1){ e.tx=clamp(s.cx+rint(Math.random,-5,5),0,w.w-1); e.ty=clamp(s.cy+rint(Math.random,-5,5),0,w.h-1); }
+        else this._wander(e,4);
+      }
+    }
+    if(e.role==="mage") e.mana=Math.min(40,e.mana+0.3);
+    this._stepToward(e);
+  }
+
+  /* --- Skeleton AI: summoned skeletons fight for their kingdom; unbound
+     (player-spawned) skeletons are feral undead that hunt the living. */
+  _skeletonAI(e){
+    e.decay+=0.02; if(e.decay>1){ e.hp-=2; e.decay=0; } // undead slowly crumble
+    // feral undead hunt the living (humans/elves); they do NOT attack their own
+    const target = e.allyKing ? this._nearestHostile(e,9)
+                              : this._nearestCivil(e,7);
+    if(target){
+      e.tx=target.x|0; e.ty=target.y|0;
+      if(dist2(e.x,e.y,target.x,target.y)<1.0 && e.cooldown<=0){
+        target.hp-=e.attack; e.cooldown=2;
+        this.game.effects.spawn("hit",target.x,target.y,"#d9d4c4");
+      }
+    } else this._wander(e,e.allyKing?6:8);
+    this._stepToward(e);
+  }
+
+  /* Nearest genuinely hostile entity for a soldier/mage/skeleton:
+     feral creatures always, plus members of kingdoms this one is at war with. */
+  _nearestHostile(e,r){
+    // resolve this unit's kingdom: home realm, or (for raiders/summons) by allyKing id
+    let myKing=e.kingdom;
+    if(!myKing && e.allyKing!=null) myKing=this.game.settlements.kingdoms.find(k=>k.id===e.allyKing);
+    const myK=myKing?myKing.id:null;
+    let best=null,bd=r*r;
+    for(const o of this.near(e.x,e.y,r)){
+      if(o===e) continue;
+      const feral = o.race===RACE.MONSTER || (o.race===RACE.ORC&&!o.settlement) || (o.race===RACE.SKELETON&&!o.allyKing);
+      let hostile=feral;
+      if(!hostile){
+        const oK = o.kingdom?o.kingdom.id:(o.allyKing||null);
+        if(myK && oK && myK!==oK && myKing && myKing.atWar.has(oK)) hostile=true;
+      }
+      if(hostile){ const d=dist2(e.x,e.y,o.x,o.y); if(d<bd){bd=d;best=o;} }
+    }
+    return best;
+  }
+
   /* --- movement helpers -------------------------------------------------- */
   _wander(e,r){
     if(e.wanderCd>0){ e.wanderCd--; return; }
@@ -1150,7 +1465,8 @@ class EntityManager{
   _nearestThreat(e,r){
     let best=null,bd=r*r;
     for(const o of this.near(e.x,e.y,r)){
-      if(o.race===RACE.ORC||o.race===RACE.MONSTER){
+      const feralSkel = o.race===RACE.SKELETON && (!o.allyKing || o.allyKing!==(e.kingdom&&e.kingdom.id));
+      if(o.race===RACE.ORC||o.race===RACE.MONSTER||feralSkel){
         const d=dist2(e.x,e.y,o.x,o.y); if(d<bd){bd=d;best=o;}
       }
     }
@@ -1202,33 +1518,41 @@ class EntityManager{
    10.  SETTLEMENT MANAGER  —  economy, building, diplomacy, dynasties
    ========================================================================== */
 class SettlementManager{
-  constructor(game){ this.game=game; this.list=[]; }
+  constructor(game){ this.game=game; this.list=[]; this.kingdoms=[]; }
 
-  found(founderEntity,race){
+  /* A nomad founds a NEW kingdom + its capital settlement. The founder's
+     faction sets the realm's path; the founder's traits become its culture. */
+  found(founderEntity){
     const w=this.game.world, x=founderEntity.x|0, y=founderEntity.y|0;
     const t=w.get(x,y); if(!t||!t.walkable) return null;
-    const s=new Settlement(race,x,y,this.game.sim.year);
-    // town hall at the centre
+    const k=new Kingdom(founderEntity.race, founderEntity.faction, this.game.sim.year);
+    k._game=this.game;
+    k.culture=[...founderEntity.traits];        // founder's traits → realm culture
+    this.kingdoms.push(k);
+    const s=new Settlement(k,x,y,this.game.sim.year);
+    k.settlements.push(s);
     t.structure=STRUCT.TOWNHALL; t.health=200; t.owner=s.id; w.dirty=true;
     s.territory.add(y*w.w+x);
     this.claimAround(s,x,y,2);
     this.list.push(s);
-    // founder becomes the first leader & member
     this.addMember(s,founderEntity);
-    founderEntity.isLeader=true; s.leader=founderEntity;
+    founderEntity.isLeader=true; founderEntity.role="leader"; s.leader=founderEntity;
     founderEntity.name=rulerName();
-    this.game.chronicle.log(`🏛️ ${founderEntity.name} founded <b>${s.name}</b>, seat of the ${s.kingdom}.`,"found");
+    const fm=FACTION_META[k.faction];
+    const cult=k.culture.length? " · "+k.culture.map(c=>TRAITS[c].name).join(", "):"";
+    this.game.chronicle.log(`🏛️ ${founderEntity.name} founded <b>${s.name}</b>, seat of the ${fm.icon} ${k.name}${cult}.`,"found");
     this.game.chronicle.achieve("first_settlement","🏛️","First Light","A civilization takes root in the world.");
-    if(this.list.filter(z=>!z.destroyed).length>=5)
-      this.game.chronicle.achieve("five_realms","🗺️","An Age of Kingdoms","Five settlements stand at once.");
+    if(this.activeKingdoms()>=5) this.game.chronicle.achieve("five_realms","🗺️","An Age of Kingdoms","Five kingdoms stand at once.");
     return s;
   }
 
   addMember(s,e){
     if(e.settlement===s)return;
     if(e.settlement){ const j=e.settlement.members.indexOf(e); if(j>=0)e.settlement.members.splice(j,1); }
-    e.settlement=s; e.race = s.race; // conform race identity to realm
-    e.dynasty=s.dynasty; e.job="idle";
+    e.settlement=s;
+    e.faction=s.kingdom.faction;                // adopt the realm's path
+    if(e.role!=="leader") e.role="civilian";
+    e.job="idle";
     s.members.push(e);
   }
 
@@ -1246,136 +1570,242 @@ class SettlementManager{
     t.structure = was===STRUCT.TOWNHALL?STRUCT.RUIN:STRUCT.NONE;
     if(was===STRUCT.RUIN) t.structure=STRUCT.NONE;
     t.health=100; w.dirty=true;
-    // recount for the owning settlement
     const s=this.list.find(z=>z.id===t.owner);
     if(s) this._recount(s);
   }
 
+  /* Recount every building type in a settlement's territory from the tiles;
+     a settlement with no town hall collapses. */
   _recount(s){
-    const w=this.game.world; let h=0,f=0,m=0,hall=false;
+    const w=this.game.world; let hall=false;
+    for(const kk in s.buildings) s.buildings[kk]=0;
     for(const idx of s.territory){
-      const st=w.tiles[idx].structure;
-      if(st===STRUCT.HOUSE)h++; else if(st===STRUCT.FARM)f++; else if(st===STRUCT.MINE)m++;
-      else if(st===STRUCT.TOWNHALL)hall=true;
+      const sid=w.tiles[idx].structure;
+      if(sid===STRUCT.TOWNHALL){ hall=true; continue; }
+      const key=STRUCT_KEY[sid];
+      if(key && s.buildings[key]!==undefined) s.buildings[key]++;
     }
-    s.houses=h; s.farms=f; s.mines=m;
+    s.storeCap = 300 + s.buildings.storehouse*STRUCTURES.storehouse.store;
     if(!hall && !s.destroyed) this._collapse(s);
   }
 
   _collapse(s){
     s.destroyed=true;
-    this.game.chronicle.log(`💀 <b>${s.name}</b> has fallen. The ${s.kingdom} is no more.`,"war");
+    const k=s.kingdom;
+    this.game.chronicle.log(`💀 <b>${s.name}</b> has fallen. The ${k.name} loses a holding.`,"war");
     this.game.chronicle.achieve("first_fall","💀","Ozymandias","A kingdom crumbles into ruin.");
-    // survivors become nomads who may migrate
-    for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.job="idle"; }
+    for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.role="civilian"; m.job="idle"; }
     s.members.length=0;
-    // release territory
     const w=this.game.world;
     for(const idx of s.territory){ if(w.tiles[idx].owner===s.id) w.tiles[idx].owner=-1; }
+    if(!k.alive){ k.destroyed=true; this.game.chronicle.log(`👑 The ${k.name} is extinguished from history.`,"war"); }
   }
 
-  /* Per-tick settlement logic: consume/produce, build, grow, govern. */
+  /* ---- master tick: kingdoms (research/metrics/diplomacy) then towns ---- */
   tick(){
-    const sim=this.game.sim, w=this.game.world;
-    for(const s of this.list){
-      if(s.destroyed) continue;
-
-      // -- succession: appoint a new leader if the throne is empty --
-      if(!s.leader && s.members.length){
-        // eldest becomes ruler -> new dynasty chapter
-        let eldest=s.members[0];
-        for(const m of s.members) if(m.age>eldest.age) eldest=m;
-        eldest.isLeader=true; eldest.name=rulerName(); s.leader=eldest;
-        s.dynasty=eldest.name.split(" ")[0]+" Dynasty";
-        this.game.chronicle.log(`👑 ${eldest.name} crowned ruler of ${s.name}. A new dynasty begins.`,"found");
-      }
-
-      // -- economy: passive production from land + structures --
-      const season=sim.seasonFactor;
-      s.res.food += s.farms*0.6*season + (s.race===RACE.ELF?0.3:0.15);
-      s.res.wood += (s.race===RACE.ELF?0.5:0.25);
-      s.res.stone+= s.mines*0.4;
-      // consumption
-      s.res.food -= s.pop*0.5;
-      // happiness responds to surplus, crowding, war
-      const fed = s.res.food>0;
-      let hTarget = 55 + (fed?20:-40) + (s.pop<s.capacity?10:-15) - s.wars*3;
-      s.happiness += (clamp(hTarget,0,100)-s.happiness)*0.05;
-      s.happiness = clamp(s.happiness,0,100);
-      s.res.food=clamp(s.res.food,0,9999);
-      s.res.wood=clamp(s.res.wood,0,9999);
-      s.res.stone=clamp(s.res.stone,0,9999);
-
-      // -- starvation deaths --
-      if(s.res.food<=0 && Math.random()<0.25 && s.pop>0){
-        const victim=choice(Math.random,s.members);
-        victim.hp-=10;
-        if(s.pop<=2 && Math.random()<0.4)
-          this.game.chronicle.log(`🥀 Famine grips ${s.name}; its people grow desperate.`,"death");
-      }
-
-      // -- construction --
-      if(s.buildCd>0) s.buildCd--; else this._tryBuild(s);
-
-      // -- reproduction / population growth --
-      if(s.res.food> s.pop*4 && s.pop<s.capacity && s.happiness>45 && Math.random()<0.2){
-        this._birth(s);
-      }
-
-      // -- territory / roads / trade cadence --
-      if(--s.tradeCd<=0){ s.tradeCd=rint(Math.random,24,44); this._diplomacyAndTrade(s); }
-
-      // -- level up milestones --
-      this._checkGrowth(s);
-      if(s.pop>s.peakPop) s.peakPop=s.pop;
+    const sim=this.game.sim;
+    for(const k of this.kingdoms){ if(k.alive) this._kingdomTick(k); }
+    for(const s of this.list){ if(!s.destroyed) this._settlementTick(s); }
+    // occasional cleanup of dead holdings/realms
+    if(sim.ticks%50===0){
+      this.list=this.list.filter(s=>!s.destroyed);
+      for(const k of this.kingdoms) k.settlements=k.settlements.filter(s=>!s.destroyed);
+      this.kingdoms=this.kingdoms.filter(k=>k.settlements.length>0);
     }
-    // purge fully-empty destroyed settlements from lists occasionally
-    if(sim.ticks%50===0) this.list=this.list.filter(s=>!(s.destroyed && s.pop===0)|| s.leader);
+  }
+
+  /* Realm-level upkeep: accumulate research → unlock tech, roll metrics. */
+  _kingdomTick(k){
+    let sci=0;
+    for(const s of k.settlements){ if(s.destroyed)continue;
+      sci += s.buildings.windmill*0.35 + s.buildings.mage_tower*0.55 + s.buildings.shrine*0.25 + s.buildings.storehouse*0.1;
+    }
+    const geniusMult = 1 + Math.max(0,k.cultureMod("research"));
+    const factionMult = k.faction===FACTION.NEUTRAL?0.4:1.0;
+    k.research += (k.pop*0.02 + sci) * geniusMult * factionMult;
+    k._applyTech();
+    this._computeMetrics(k);
+  }
+
+  _computeMetrics(k){
+    let pop=0,mil=0,cap=0,food=0,wood=0,stone=0,mana=0,happ=0,ns=0,towers=0;
+    for(const s of k.settlements){ if(s.destroyed)continue;
+      pop+=s.pop; cap+=s.capacity;
+      food+=s.res.food; wood+=s.res.wood; stone+=s.res.stone; mana+=s.res.mana;
+      happ+=s.happiness; ns++; towers+=s.buildings.watchtower;
+      for(const m of s.members) if(m.role==="soldier"||m.role==="mage") mil++;
+    }
+    const homeless=Math.max(0,pop-cap);
+    const avgHapp=ns?happ/ns:70;
+    const crimeTarget=clamp(((pop?homeless/pop:0)*60)+(60-avgHapp)*0.6-towers*8,0,100);
+    const m=k.metrics;
+    m.population=pop; m.military=mil; m.homeless=homeless; m.homelessRate=pop?homeless/pop:0;
+    m.crime += (crimeTarget-m.crime)*0.1; m.crime=clamp(m.crime,0,100);
+    m.food=food; m.wood=wood; m.stone=stone; m.mana=mana;
+    if(pop>k.peakPop)k.peakPop=pop;
+  }
+
+  /* Town-level upkeep: succession, economy, building, growth, defence. */
+  _settlementTick(s){
+    const sim=this.game.sim, k=s.kingdom, b=s.buildings;
+
+    // succession
+    if(!s.leader && s.members.length){
+      let eldest=s.members[0]; for(const m of s.members) if(m.age>eldest.age)eldest=m;
+      eldest.isLeader=true; eldest.role="leader"; eldest.name=rulerName(); s.leader=eldest;
+      k.dynasty=eldest.name.split(" ")[0]+" Dynasty";
+      this.game.chronicle.log(`👑 ${eldest.name} crowned ruler of ${s.name}. A new dynasty begins.`,"found");
+    }
+
+    // economy
+    const season=sim.seasonFactor;
+    s.res.food += (b.farm*STRUCTURES.farm.food + b.windmill*STRUCTURES.windmill.food)*season + (k.race===RACE.ELF?0.3:0.15);
+    s.res.wood += (k.race===RACE.ELF?0.5:0.25) + b.storehouse*0.05;
+    // villagers quarry a small trickle of loose stone even without a mine, so
+    // stone-gated buildings remain reachable on stoneless grassland
+    s.res.stone+= 0.09 + b.mine*STRUCTURES.mine.stone;
+    s.res.mana += b.shrine*STRUCTURES.shrine.mana + b.mage_tower*STRUCTURES.mage_tower.mana;
+    s.res.food -= s.pop*0.5;
+    // happiness (crime & culture now bite)
+    const fed=s.res.food>0, crime=k.metrics.crime;
+    let hTarget=55+(fed?20:-40)+(s.pop<s.capacity?10:-15)-k.wars*3-crime*0.3+k.cultureMod("happiness")*20;
+    s.happiness += (clamp(hTarget,0,100)-s.happiness)*0.05;
+    s.happiness=clamp(s.happiness,0,100);
+    s.res.food =clamp(s.res.food ,0,s.storeCap);
+    s.res.wood =clamp(s.res.wood ,0,s.storeCap);
+    s.res.stone=clamp(s.res.stone,0,s.storeCap);
+    s.res.mana =clamp(s.res.mana ,0,200);
+
+    // starvation
+    if(s.res.food<=0 && Math.random()<0.25 && s.pop>0){
+      const victim=choice(Math.random,s.members); victim.hp-=10;
+      if(s.pop<=2 && Math.random()<0.4) this.game.chronicle.log(`🥀 Famine grips ${s.name}; its people grow desperate.`,"death");
+    }
+
+    // military training from barracks / mage towers
+    if(b.barracks>0 || b.mage_tower>0){
+      const cur=s.members.filter(m=>m.role==="soldier"||m.role==="mage").length;
+      const want=Math.floor(s.pop*(0.15+Math.max(0,k.cultureMod("military"))*0.35));
+      if(cur<want && Math.random()<0.12){
+        const civ=s.members.find(m=>m.role==="civilian"&&!m.isLeader);
+        if(civ){
+          if(b.mage_tower>0 && k.faction===FACTION.MAGIC){ civ.role="mage"; civ.equipment="staff"; civ.range=5; civ.attack=16; civ.mana=20; }
+          else { civ.role="soldier"; civ.attack=k.hasPower("ranged")?18:12; civ.range=k.hasPower("ranged")?4:0; civ.equipment=k.hasPower("ranged")?"musket":null; }
+        }
+      }
+    }
+
+    // construction (upgrades + new buildings, trait/faction driven)
+    if(s.buildCd>0) s.buildCd--; else this._tryBuild(s);
+
+    // reproduction (Fertile boosts, homelessness suppresses)
+    const reproChance=0.2*(1+Math.max(0,k.cultureMod("reproduce")))*(k.metrics.homelessRate>0.4?0.4:1);
+    if(s.res.food>s.pop*4 && s.pop<s.capacity && s.happiness>45 && Math.random()<reproChance) this._birth(s);
+
+    // diplomacy / trade cadence
+    if(--s.tradeCd<=0){ s.tradeCd=rint(Math.random,24,44); this._diplomacyAndTrade(s); }
+
+    this._checkGrowth(s);
   }
 
   _birth(s){
     if(this.game.entities.list.length>=CONFIG.MAX_ENTITIES) return;
-    const w=this.game.world;
-    const baby=this.game.entities.spawn(s.race,s.cx+ (Math.random()*2-1), s.cy+(Math.random()*2-1));
+    const baby=this.game.entities.spawn(s.race,s.cx+(Math.random()*2-1),s.cy+(Math.random()*2-1));
     if(!baby)return;
     baby.age=0; baby.hunger=0;
     this.addMember(s,baby);
     s.res.food-=3;
-    if(s.pop>=10 && Math.random()<0.3)
-      this.game.chronicle.log(`👶 A child, ${baby.name}, is born in ${s.name}.`,"birth");
+    if(s.pop>=10 && Math.random()<0.3) this.game.chronicle.log(`👶 A child, ${baby.name}, is born in ${s.name}.`,"birth");
+  }
+
+  /* ---- building: affordability, placement, upgrade chain ---------------- */
+  _afford(s,key){ const c=STRUCTURES[key].cost||{}; return s.res.wood>=(c.wood||0)&&s.res.stone>=(c.stone||0)&&s.res.food>=(c.food||0); }
+  _pay(s,key){ const c=STRUCTURES[key].cost||{}; if(c.wood)s.res.wood-=c.wood; if(c.stone)s.res.stone-=c.stone; if(c.food)s.res.food-=c.food; }
+
+  _underCap(s,key){
+    const b=s.buildings, p=s.pop;
+    const caps={ farm:3+((p/5)|0), windmill:1+((p/12)|0), mine:1+((p/14)|0),
+      storehouse:1+((p/25)|0), watchtower:1+((p/12)|0), barracks:1+((p/9)|0),
+      shrine:1+((p/16)|0), mage_tower:1+((p/12)|0) };
+    if(key==="mine" && !this._nearRock(s)) return false;
+    return (b[key]||0) < (caps[key]??99);
+  }
+
+  _buildAgenda(s){
+    const k=s.kingdom;
+    const savage=traitHas(k.culture,"raid_happy")||k.cultureMod("military")>0.2;
+    const researchy=k.cultureMod("research")>0.2;
+    const o=[];
+    if(savage){ o.push("barracks","watchtower","barracks"); }
+    if(researchy){ o.push(k.faction===FACTION.MAGIC?"mage_tower":"windmill","storehouse"); }
+    if(k.faction===FACTION.TECH){ o.push("windmill","barracks","mine"); }
+    if(k.faction===FACTION.MAGIC){ o.push("shrine","mage_tower"); }
+    o.push("storehouse","watchtower","mine","farm");
+    return o;
   }
 
   _tryBuild(s){
-    const w=this.game.world;
-    const wantHouse = s.pop >= s.capacity-1 && s.res.wood>=15;
-    const wantFarm  = s.res.food < s.pop*4 && s.farms < 3+Math.floor(s.pop/6) && s.res.wood>=8;
-    const wantMine  = s.mines<1 && s.res.stone<20 && this._nearRock(s) && s.res.wood>=10;
-    let build=null;
-    if(wantHouse) build=STRUCT.HOUSE;
-    else if(wantFarm) build=STRUCT.FARM;
-    else if(wantMine) build=STRUCT.MINE;
-    else if(s.res.wood>40 && Math.random()<0.3) build=STRUCT.HOUSE; // surplus expansion
-    if(!build) return;
+    const k=s.kingdom, b=s.buildings;
+    const needFood=s.res.food<s.pop*4, needHousing=s.pop>=s.capacity-1;
+    // 1) housing pressure → upgrade tent→house→palace, else raise a new tent/house
+    if(needHousing){
+      if(this._tryUpgrade(s)){ s.buildCd=rint(Math.random,4,8); return; }
+      if(k.canBuild("house")&&this._afford(s,"house")&&this._build(s,"house")){ s.buildCd=rint(Math.random,3,7); return; }
+      if(k.canBuild("tent") &&this._afford(s,"tent") &&this._build(s,"tent")) { s.buildCd=rint(Math.random,3,7); return; }
+    }
+    // 2) food
+    if(needFood){
+      if(k.canBuild("windmill")&&this._underCap(s,"windmill")&&this._afford(s,"windmill")&&this._build(s,"windmill")){ s.buildCd=rint(Math.random,3,7); return; }
+      if(k.canBuild("farm")&&this._underCap(s,"farm")&&this._afford(s,"farm")&&this._build(s,"farm")){ s.buildCd=rint(Math.random,3,7); return; }
+    }
+    // 3) culture / faction agenda
+    for(const key of this._buildAgenda(s)){
+      if(!k.canBuild(key)||!this._underCap(s,key)||!this._afford(s,key)) continue;
+      if(this._build(s,key)){ s.buildCd=rint(Math.random,3,7); return; }
+    }
+    // 4) surplus → more housing / upgrades
+    if(s.res.wood>45){ if(!this._tryUpgrade(s) && k.canBuild("house") && this._afford(s,"house")) this._build(s,"house"); s.buildCd=rint(Math.random,3,7); }
+  }
 
-    const spot=this._buildSpot(s,build);
-    if(!spot) return;
+  _tryUpgrade(s){
+    const k=s.kingdom, w=this.game.world;
+    for(const [from,to] of [["tent","house"],["house","palace"]]){
+      if(!k.canBuild(to) || !this._afford(s,to)) continue;
+      const spot=this._findOwnedTile(s,STRUCTURES[from].sid);
+      if(spot){
+        this._pay(s,to);
+        const t=w.get(spot.x,spot.y);
+        t.structure=STRUCTURES[to].sid; t.health=STRUCTURES[to].hp; w.dirty=true;
+        this._recount(s);
+        this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _build(s,key){
+    const w=this.game.world, def=STRUCTURES[key];
+    const spot=this._buildSpot(s,key); if(!spot) return false;
+    this._pay(s,key);
     const t=w.get(spot.x,spot.y);
-    // pay costs
-    if(build===STRUCT.HOUSE){ s.res.wood-=15; s.res.stone-=4; }
-    else if(build===STRUCT.FARM){ s.res.wood-=8; t.fertility=Math.max(t.fertility,0.7); }
-    else if(build===STRUCT.MINE){ s.res.wood-=10; }
-    t.structure=build; t.health=120; t.owner=s.id; t.resource=RES.NONE;
+    if(key==="farm") t.fertility=Math.max(t.fertility,0.7);
+    t.structure=def.sid; t.health=def.hp||120; t.owner=s.id; t.resource=RES.NONE;
     s.territory.add(spot.y*w.w+spot.x);
     this.claimAround(s,spot.x,spot.y,1);
     this._recount(s);
     this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
-    s.buildCd=rint(Math.random,3,7);
-    w.dirty=true;
+    w.dirty=true; return true;
   }
 
-  _buildSpot(s,build){
+  _findOwnedTile(s,sid){
     const w=this.game.world;
-    // farms like fertile ground; mines like rock/wasteland; houses near hall
+    for(const idx of s.territory){ if(w.tiles[idx].structure===sid) return {x:idx%w.w,y:(idx/w.w)|0}; }
+    return null;
+  }
+
+  _buildSpot(s,key){
+    const w=this.game.world;
     for(let ring=1;ring<=6;ring++){
       const cand=[];
       for(let a=0;a<ring*8;a++){
@@ -1383,11 +1813,11 @@ class SettlementManager{
         const x=Math.round(s.cx+Math.cos(ang)*ring), y=Math.round(s.cy+Math.sin(ang)*ring);
         const t=w.get(x,y);
         if(!t||!t.walkable||t.structure!==STRUCT.NONE) continue;
-        if(build===STRUCT.MINE && !(t.biome===BIOME.ROCK||t.resource===RES.STONE)) continue;
-        if(build===STRUCT.FARM && t.fertility<0.35) continue;
-        cand.push({x,y,t});
+        if(key==="mine" && !(t.biome===BIOME.ROCK||t.resource===RES.STONE)) continue;
+        if(key==="farm" && t.fertility<0.35) continue;
+        cand.push({x,y});
       }
-      if(cand.length){ const c=choice(Math.random,cand); return {x:c.x,y:c.y}; }
+      if(cand.length) return choice(Math.random,cand);
     }
     return null;
   }
@@ -1402,57 +1832,61 @@ class SettlementManager{
   }
 
   _checkGrowth(s){
-    const key=`lvl${s.id}`;
-    if(s.pop>=45) this.game.chronicle.achieve("kingdom_"+s.id,"👑",`The ${s.kingdom} Ascends`,`${s.name} has grown into a mighty kingdom.`);
-    if(s.pop>=16 && s.level<3){ s.level=3; this.game.chronicle.log(`🏘️ ${s.name} has grown into a bustling town.`,"found"); }
-    else if(s.pop>=7 && s.level<2){ s.level=2; }
+    const k=s.kingdom;
+    if(s.pop>=45) this.game.chronicle.achieve("kingdom_"+k.id,"👑",`The ${k.name} Ascends`,`${s.name} has grown into a mighty kingdom.`);
+    if(s.pop>=16 && !s._town){ s._town=true; this.game.chronicle.log(`🏘️ ${s.name} has grown into a bustling town.`,"found"); }
   }
 
-  /* Diplomacy + trade + roads between nearby settlements. */
+  /* Diplomacy + trade + roads, now at the KINGDOM level. */
   _diplomacyAndTrade(s){
-    const w=this.game.world;
+    const k=s.kingdom;
     for(const o of this.list){
-      if(o===s||o.destroyed) continue;
-      const d=Math.sqrt(dist2(s.cx,s.cy,o.cx,o.cy));
-      if(d>34) continue;
-      const key=Math.min(s.id,o.id)+"_"+Math.max(s.id,o.id);
-      if(s.relations[o.id]===undefined) s.relations[o.id]=0;
-      if(o.relations[s.id]===undefined) o.relations[s.id]=0;
-
-      if(s.race===o.race){
-        // friendly: build a road + trade surplus
-        s.relations[o.id]=clamp(s.relations[o.id]+2,-100,100);
+      if(o===s||o.destroyed||o.kingdom===k) continue;
+      const ok=o.kingdom;
+      if(Math.sqrt(dist2(s.cx,s.cy,o.cx,o.cy))>34) continue;
+      if(k.relations[ok.id]===undefined) k.relations[ok.id]=0;
+      if(ok.relations[k.id]===undefined) ok.relations[k.id]=0;
+      const sameRace=k.race===ok.race, pacifist=traitHas(k.culture,"no_first_strike");
+      if(sameRace){
+        k.relations[ok.id]=clamp(k.relations[ok.id]+2,-100,100);
+        if(k.relations[ok.id]>50){ k.allies.add(ok.id); ok.allies.add(k.id); }
         this._buildRoad(s,o);
-        // move surplus food/wood along the trade route
+        // Savage realms fall out even with their own kin (territorial friction)
+        if(traitHas(k.culture,"raid_happy") && k.pop>4 && !k.atWar.has(ok.id) && Math.random()<0.06){
+          this._declareWar(k,ok,o); continue;
+        }
         if(s.res.food>o.res.food+20){
           const amt=Math.min(10,(s.res.food-o.res.food)/2);
           s.res.food-=amt; o.res.food+=amt;
-          if(Math.random()<0.25) this.game.chronicle.log(`🐎 Trade caravans carry grain from ${s.name} to ${o.name}.`,"trade");
+          if(Math.random()<0.2) this.game.chronicle.log(`🐎 Trade caravans carry grain from ${s.name} to ${o.name}.`,"trade");
           this.game.chronicle.achieve("first_trade","🐎","Merchant Roads","Two realms open a trade route.");
         }
       } else {
-        // rival races may drift toward war
-        s.relations[o.id]=clamp(s.relations[o.id]-3,-100,100);
-        if(s.relations[o.id]<-40 && Math.random()<0.15 && s.pop>4){
-          this._declareWar(s,o);
+        const drift=3*(1+Math.max(0,k.cultureMod("aggression")));
+        k.relations[ok.id]=clamp(k.relations[ok.id]-drift,-100,100);
+        if(k.relations[ok.id]<-40 && !pacifist && !k.atWar.has(ok.id) && k.pop>4 &&
+           Math.random()<0.15*(1+Math.max(0,k.cultureMod("aggression")))){
+          this._declareWar(k,ok,o);
         }
       }
     }
   }
 
-  _declareWar(s,o){
-    s.wars++; o.wars++;
-    this.game.chronicle.log(`⚔️ ${s.kingdom} declares war upon ${o.kingdom}!`,"war");
-    // send a couple of raiders (spawn temporary aggressive members near o)
-    const raiders=Math.min(3,Math.floor(s.pop/4));
+  _declareWar(k,ok,targetTown){
+    k.wars++; ok.wars++; k.atWar.add(ok.id); ok.atWar.add(k.id);
+    this.game.chronicle.log(`⚔️ ${FACTION_META[k.faction].icon} ${k.name} declares war upon ${ok.name}!`,"war");
+    const raiders=Math.min(4,Math.max(1,Math.floor(k.pop/4)));
     for(let i=0;i<raiders;i++){
-      const e=this.game.entities.spawn(s.race, o.cx+rint(Math.random,-2,2), o.cy+rint(Math.random,-2,2));
-      if(e){ e.settlement=null; e.state="raid"; e.hp=120; e.tx=o.cx; e.ty=o.cy; e.job="idle";
-             // reuse orc-like aggression by flagging
-             e._raider=o; }
+      const e=this.game.entities.spawn(k.race, targetTown.cx+rint(Math.random,-2,2), targetTown.cy+rint(Math.random,-2,2));
+      if(e){ e.settlement=null; e.faction=k.faction; e.role="soldier"; e.hp=120;
+             e.attack=k.hasPower("ranged")?18:14; e.range=k.hasPower("ranged")?4:0;
+             e.equipment=k.hasPower("ranged")?"musket":null; e.allyKing=k.id;
+             e.tx=targetTown.cx; e.ty=targetTown.cy; e.job="idle"; e._raider=targetTown; }
     }
     this.game.chronicle.achieve("first_war","⚔️","The Dogs of War","War erupts between two kingdoms.");
   }
+
+  activeKingdoms(){ return this.kingdoms.filter(k=>k.alive).length; }
 
   _buildRoad(a,b){
     const w=this.game.world;
@@ -1606,11 +2040,12 @@ class DisasterManager{
    ========================================================================== */
 class EffectManager{
   constructor(game){ this.game=game; this.fx=[]; }
-  spawn(type,x,y,color,size=1){
-    this.fx.push({type,x,y,color,size,t:0,life:this._life(type),parts:this._parts(type,size)});
+  // x2,y2 are optional endpoints for projectile tracers (bolt/shot).
+  spawn(type,x,y,color,size=1,x2,y2){
+    this.fx.push({type,x,y,x2,y2,color,size,t:0,life:this._life(type),parts:this._parts(type,size)});
   }
   _life(type){
-    return {lightning:0.5,meteor:0.9,explosion:0.7,acid:1.4,quake:0.8,hit:0.3,chip:0.5,build:0.6}[type]||0.5;
+    return {lightning:0.5,meteor:0.9,explosion:0.7,acid:1.4,quake:0.8,hit:0.3,chip:0.5,build:0.6,bolt:0.22,shot:0.16}[type]||0.5;
   }
   _parts(type,size){
     const arr=[];
@@ -1807,6 +2242,58 @@ class Renderer{
       case STRUCT.RUIN:{
         ctx.fillStyle="#4a4448"; ctx.fillRect(px+3,py+8,3,4); ctx.fillRect(px+8,py+7,3,5);
         break; }
+      case STRUCT.TENT:{
+        ctx.fillStyle="#b58a4a"; ctx.beginPath();
+        ctx.moveTo(cx,py+4); ctx.lineTo(px+3,py+T-3); ctx.lineTo(px+T-3,py+T-3); ctx.fill();
+        ctx.fillStyle="#3a2a16"; ctx.fillRect(cx-1,py+9,2,T-12);
+        break; }
+      case STRUCT.PALACE:{
+        ctx.fillStyle="#9a7a4a"; ctx.fillRect(px+2,py+5,T-4,T-6);
+        ctx.fillStyle="#d9b45c"; // battlements
+        for(let i=0;i<4;i++) ctx.fillRect(px+2+i*3.4,py+3,2,3);
+        ctx.fillStyle="#6a4fae"; ctx.fillRect(cx-1,py+8,3,T-10);      // grand door
+        ctx.fillStyle="#ffcf5c"; ctx.fillRect(cx,py,1,4); ctx.fillRect(cx+1,py,3,2);
+        break; }
+      case STRUCT.STOREHOUSE:{
+        ctx.fillStyle="#6b5334"; ctx.fillRect(px+2,py+5,T-4,T-6);
+        ctx.fillStyle="#8a6f45"; ctx.fillRect(px+2,py+4,T-4,3);       // roof lip
+        ctx.fillStyle="#3a2c18"; ctx.fillRect(px+4,py+9,T-8,4);       // crates
+        break; }
+      case STRUCT.WINDMILL:{
+        ctx.fillStyle="#8a7250"; ctx.fillRect(cx-2,py+6,4,T-8);       // tower
+        ctx.strokeStyle="#e6d9b0"; ctx.lineWidth=1.4;
+        const a=this.frame*0.15; // spinning sails
+        for(let i=0;i<4;i++){ const an=a+i*Math.PI/2; ctx.beginPath();
+          ctx.moveTo(cx,py+5); ctx.lineTo(cx+Math.cos(an)*5,py+5+Math.sin(an)*5); ctx.stroke(); }
+        break; }
+      case STRUCT.BARRACKS:{
+        ctx.fillStyle="#5b5f66"; ctx.fillRect(px+2,py+5,T-4,T-6);
+        ctx.fillStyle="#7c828a"; ctx.fillRect(px+2,py+4,T-4,2);
+        ctx.fillStyle="#c0392b"; ctx.fillRect(px+4,py+2,1,4);        // banner pole
+        ctx.fillStyle="#ff5c5c"; ctx.fillRect(px+5,py+2,3,2);
+        ctx.fillStyle="#2a2d31"; ctx.fillRect(cx-1,py+9,3,T-11);
+        break; }
+      case STRUCT.WATCHTOWER:{
+        ctx.fillStyle="#7a6a52"; ctx.fillRect(cx-2,py+3,4,T-5);
+        ctx.fillStyle="#9a8a6a"; ctx.fillRect(cx-3,py+2,6,3);         // top platform
+        ctx.fillStyle="#ffcf5c"; ctx.fillRect(cx-1,py+4,2,2);         // watch light
+        break; }
+      case STRUCT.WALL:{
+        ctx.fillStyle="#8f8a80"; ctx.fillRect(px+1,py+3,T-2,T-5);
+        ctx.fillStyle="#6f6a60"; ctx.fillRect(px+1,py+3,T-2,2);
+        ctx.fillStyle="#a5a096"; ctx.fillRect(px+2,py+3,2,2); ctx.fillRect(px+7,py+3,2,2); ctx.fillRect(px+12,py+3,2,2);
+        break; }
+      case STRUCT.SHRINE:{
+        ctx.fillStyle="#5a5a86"; ctx.fillRect(px+3,py+6,T-6,T-8);
+        ctx.fillStyle="#c58cff"; ctx.beginPath(); ctx.moveTo(px+2,py+6); ctx.lineTo(cx,py+1); ctx.lineTo(px+T-2,py+6); ctx.fill();
+        ctx.fillStyle="#e6c8ff"; ctx.fillRect(cx-1,py+9,2,2);          // glowing rune
+        break; }
+      case STRUCT.MAGE_TOWER:{
+        ctx.fillStyle="#4a4a7a"; ctx.fillRect(cx-3,py+4,6,T-5);
+        ctx.fillStyle="#6a5fae"; ctx.beginPath(); ctx.moveTo(cx-3,py+4); ctx.lineTo(cx,py-1); ctx.lineTo(cx+3,py+4); ctx.fill();
+        const glow=0.5+0.5*Math.sin(this.frame*0.15);
+        ctx.fillStyle=`rgba(197,140,255,${0.5+0.5*glow})`; ctx.fillRect(cx-1,py+7,2,2);
+        break; }
     }
   }
 
@@ -1909,6 +2396,18 @@ class Renderer{
       ctx.fillRect(px-1, py-s-1.5, 2, 2);
       // leader crown
       if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-2,py-s-3,4,1.4); }
+      // role markers: soldiers carry a weapon, mages glow with a staff
+      if(e.role==="soldier"){
+        ctx.strokeStyle=e.equipment==="musket"?"#d9c48a":"#c9ccd2"; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(px+2,py-s+1); ctx.lineTo(px+2,py-s-(e.equipment==="musket"?4:3)); ctx.stroke();
+        if(e.equipment==="musket"){ ctx.fillStyle="#3a2c18"; ctx.fillRect(px+1.4,py-s-4,1.4,1.4); }
+      } else if(e.role==="mage"){
+        const g=0.5+0.5*Math.sin(this.frame*0.2+e.id);
+        ctx.fillStyle=`rgba(197,140,255,${0.5+0.5*g})`; ctx.fillRect(px+1.5,py-s-3,1.6,4);   // staff
+        ctx.beginPath(); ctx.arc(px+2.3,py-s-3.5,1.6,0,7); ctx.fill();                        // orb
+      }
+      // undead ribcage tick
+      if(e.race===RACE.SKELETON){ ctx.fillStyle="#8a857a"; ctx.fillRect(px-s/2,py-s+1,s,0.8); }
       // low-hp flash
       if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.5)"; ctx.fillRect(px-s/2,py-s,s,s); }
       // carrying resource tick
@@ -1919,8 +2418,10 @@ class Renderer{
   _raceColor(e){
     if(e.race===RACE.ORC) return "#7ed957";
     if(e.race===RACE.MONSTER) return "#c95fff";
+    if(e.race===RACE.SKELETON) return e.allyKing? "#e7e2d2":"#cfc8b0";
     if(e.race===RACE.ELF) return e.settlement? "#8fe0c0":"#5ce0b0";
-    // humans coloured by their settlement banner
+    // humans coloured by their kingdom banner; tinted by faction for casters
+    if(e.role==="mage") return "#c58cff";
     return e.settlement? e.settlement.color : "#e7d3a0";
   }
   _shade(hex,f){
@@ -1937,7 +2438,7 @@ class Renderer{
     for(const s of this.game.settlements.list){
       if(s.destroyed)continue;
       const px=s.cx*T+T/2, py=s.cy*T-8;
-      const label=`${s.name}`;
+      const label=`${FACTION_META[s.faction].icon} ${s.name}`;
       ctx.font="bold 8px 'Courier New',monospace";
       ctx.fillStyle="rgba(0,0,0,0.55)";
       const w=ctx.measureText(label).width+6;
@@ -2010,6 +2511,18 @@ class Renderer{
           ctx.strokeRect(px-6*(1-p),py-6*(1-p),12*(1-p),12*(1-p));
           for(const pt of e.parts){ ctx.fillStyle=e.color; ctx.fillRect(px+pt.dx*p*10, py-pt.dy*p*10, pt.r,pt.r); }
           break; }
+        case "shot": case "bolt":{
+          // projectile tracer from (x,y) → (x2,y2), fading as it lands
+          if(e.x2!=null){
+            const ex=e.x2*T, ey=e.y2*T;
+            const hx=lerp(px,ex,Math.min(1,p*1.6)), hy=lerp(py,ey,Math.min(1,p*1.6));
+            ctx.strokeStyle=e.color; ctx.lineWidth=e.type==="bolt"?2:1.2;
+            ctx.globalAlpha=1-p;
+            ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(hx,hy); ctx.stroke();
+            ctx.globalAlpha=1;
+            ctx.fillStyle=e.color; ctx.beginPath(); ctx.arc(hx,hy,e.type==="bolt"?2:1.3,0,7); ctx.fill();
+          }
+          break; }
       }
       ctx.restore();
     }
@@ -2039,9 +2552,12 @@ const TOOLS = [
     {id:"volcano",icon:"🌋",name:"Volcano",desc:"<b>Volcano</b> — erupt a lava vent that scorches the land."},
   ]},
   {cat:"Life",cls:"cat-life",items:[
-    {id:"human",  icon:"🧑",name:"Human", desc:"<b>Humans</b> — settlers who build kingdoms, farms and roads."},
-    {id:"orc",    icon:"👹",name:"Orc",   desc:"<b>Orcs</b> — raiders that sack settlements and slay the weak."},
+    {id:"human",  icon:"🧑",name:"Human", desc:"<b>Humans</b> — settlers who found kingdoms. They adopt the <b>Path</b> &amp; <b>Traits</b> you select below."},
+    {id:"industrial",icon:"⚙️",name:"Industrial",desc:"<b>Industrial Humans</b> — a Tech-path folk who research gunpowder, build windmills, barracks &amp; wield muskets."},
+    {id:"mage",   icon:"🧙",name:"Mage",  desc:"<b>Mages</b> — an Arcane-path folk who raise shrines &amp; mage towers, cast bolts and summon skeletons."},
     {id:"elf",    icon:"🧝",name:"Elf",   desc:"<b>Elves</b> — forest folk who reforest and gather efficiently."},
+    {id:"orc",    icon:"👹",name:"Orc",   desc:"<b>Orcs</b> — raiders that sack settlements and slay the weak."},
+    {id:"skeleton",icon:"💀",name:"Skeleton",desc:"<b>Skeletons</b> — feral undead: no hunger, slowly decay, and hunt the living."},
     {id:"monster",icon:"🐉",name:"Monster",desc:"<b>Monsters</b> — feral beasts that attack any civilization."},
   ]},
   {cat:"Disasters",cls:"cat-disaster",items:[
@@ -2070,10 +2586,58 @@ class UIManager{
     this.hoverTile=null;
     this.selectedSettlement=null;
     this._toastTimer=null;
+    // culture applied to newly-spawned civilizations
+    this.spawnFaction=FACTION.NEUTRAL;
+    this.spawnTraits=new Set();
     this._buildPanel();
+    this._buildCulturePicker();
     this._bind();
     this.syncControls();
     this.selectTool("human");
+  }
+
+  /* Build the faction-path buttons and trait chips of the Culture picker.
+     Whatever is selected here is stamped onto the next civilization you spawn. */
+  _buildCulturePicker(){
+    const fr=document.getElementById("factionRow");
+    fr.innerHTML="";
+    for(const f of [FACTION.NEUTRAL,FACTION.TECH,FACTION.MAGIC]){
+      const meta=FACTION_META[f];
+      const b=document.createElement("div");
+      b.className="chip faction"+(f===this.spawnFaction?" on":"");
+      b.dataset.faction=f;
+      b.innerHTML=`<span class="cd">${meta.icon}</span>${meta.name}`;
+      b.title=`Path: ${meta.name}`;
+      b.addEventListener("click",()=>{
+        this.spawnFaction=f;
+        document.querySelectorAll("#factionRow .chip").forEach(c=>c.classList.toggle("on",c.dataset.faction===f));
+      });
+      fr.appendChild(b);
+    }
+    const tr=document.getElementById("traitRow");
+    tr.innerHTML="";
+    for(const id of TRAIT_IDS){
+      const t=TRAITS[id];
+      const b=document.createElement("div");
+      b.className="chip"; b.dataset.trait=id;
+      b.innerHTML=`<span class="cd">${t.icon}</span>${t.name}`;
+      b.title=t.desc;
+      b.addEventListener("click",()=>this._toggleTrait(id,b));
+      b.addEventListener("mouseenter",()=>{document.getElementById("tooldesc").innerHTML=`<b>${t.name}</b> — ${t.desc}`;});
+      tr.appendChild(b);
+    }
+  }
+
+  _toggleTrait(id,btn){
+    if(this.spawnTraits.has(id)){ this.spawnTraits.delete(id); btn.classList.remove("on"); return; }
+    // enforce mutually-exclusive opposites (e.g. Savage ⇄ Pacifist)
+    for(const other of TRAITS[id].opp){
+      if(this.spawnTraits.has(other)){
+        this.spawnTraits.delete(other);
+        const ob=document.querySelector(`#traitRow .chip[data-trait="${other}"]`); if(ob)ob.classList.remove("on");
+      }
+    }
+    this.spawnTraits.add(id); btn.classList.add("on");
   }
 
   /* --- build the god-power buttons from the TOOLS table ------------------ */
@@ -2223,7 +2787,7 @@ class UIManager{
     const g=this.game, w=g.world;
     if(!w.inBounds(cx,cy)) return;
     const r=this.brush;
-    const single = ["volcano","meteor","quake","lightning","human","orc","elf","monster"].includes(this.tool);
+    const single = ["volcano","meteor","quake","lightning","human","orc","elf","monster","mage","industrial","skeleton"].includes(this.tool);
 
     if(single){
       this._applySingle(cx,cy); return;
@@ -2249,18 +2813,37 @@ class UIManager{
     }
   }
 
+  /* Spawn a civilian group tagged with the currently-selected faction/traits. */
+  _spawnCivil(race,x,y,faction){
+    const g=this.game, n=1+this.brush;
+    for(let i=0;i<n;i++){
+      const e=g.entities.spawn(race, x+(Math.random()-.5)*(this.brush+1), y+(Math.random()-.5)*(this.brush+1));
+      if(e){ e.faction=faction; e.traits=[...this.spawnTraits]; }
+    }
+  }
+
   _applySingle(x,y){
     const g=this.game;
     switch(this.tool){
-      case "human":   for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.HUMAN,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Humans placed"); break;
-      case "orc":     for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.ORC,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Orcs unleashed"); break;
-      case "elf":     for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.ELF,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Elves placed"); break;
-      case "monster": g.entities.spawn(RACE.MONSTER,x,y); this.toast("A monster prowls"); break;
+      // civilians adopt the selected Culture (path + traits)
+      case "human":      this._spawnCivil(RACE.HUMAN,x,y,this.spawnFaction); this._civToast("Humans"); break;
+      case "elf":        this._spawnCivil(RACE.ELF,x,y,this.spawnFaction);   this._civToast("Elves");  break;
+      case "industrial": this._spawnCivil(RACE.HUMAN,x,y,FACTION.TECH);      this.toast("⚙️ Industrial folk placed"); break;
+      case "mage":       this._spawnCivil(RACE.HUMAN,x,y,FACTION.MAGIC);     this.toast("🧙 Mages placed"); break;
+      // wild / undead
+      case "orc":      for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.ORC,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Orcs unleashed"); break;
+      case "skeleton": for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.SKELETON,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("💀 The dead rise"); break;
+      case "monster":  g.entities.spawn(RACE.MONSTER,x,y); this.toast("A monster prowls"); break;
       case "lightning": g.disasters.lightning(x,y); break;
       case "meteor":  g.disasters.meteor(x,y); break;
       case "quake":   g.disasters.earthquake(x,y); break;
       case "volcano": g.disasters.volcano(x,y); break;
     }
+  }
+  _civToast(who){
+    const f=FACTION_META[this.spawnFaction];
+    const tr=[...this.spawnTraits].map(t=>TRAITS[t].name);
+    this.toast(`${f.icon} ${who} (${f.name}${tr.length?" · "+tr.join(", "):""})`);
   }
 
   _placeStructure(x,y){
@@ -2324,17 +2907,26 @@ class UIManager{
   renderKingdoms(){
     const host=document.getElementById("page-kingdoms");
     const list=this.game.settlements.list.filter(s=>!s.destroyed).sort((a,b)=>b.pop-a.pop);
-    if(!list.length){ host.innerHTML='<div class="empty">No settlements yet.<br>Place humans or elves and watch them build.</div>'; return; }
+    if(!list.length){ host.innerHTML='<div class="empty">No realms yet.<br>Pick a <b>Culture</b>, place Humans/Elves/Mages/Industrial folk, and watch kingdoms rise.</div>'; return; }
     host.innerHTML=list.map(s=>{
+      const k=s.kingdom, m=k.metrics, b=s.buildings;
       const h=Math.floor(s.happiness);
       const hcol=h>60?"var(--success)":h>35?"var(--gold)":"var(--danger)";
+      const fm=FACTION_META[k.faction];
+      const next=k.nextTech();
+      const cult=k.culture.map(c=>`${TRAITS[c].icon}`).join("");
+      const crime=Math.round(m.crime), homeless=m.homeless;
+      const crimeCol=crime>50?"var(--danger)":crime>25?"var(--gold)":"var(--text-dim)";
       return `<div class="kcard" style="border-left-color:${s.color}">
         <h3>${s.name} <span class="race">· ${s.title}</span></h3>
-        <div class="race">${s.kingdom} — ${s.race}</div>
+        <div class="race">${fm.icon} ${k.name} — ${k.race} ${cult}</div>
         <div class="row"><span>👑 ${s.leader?s.leader.name:'—'}</span></div>
-        <div class="row"><span>Pop</span><b>${s.pop}/${s.capacity}</b></div>
-        <div class="row"><span>🍖 ${Math.floor(s.res.food)}</span><span>🪵 ${Math.floor(s.res.wood)}</span><span>⛏️ ${Math.floor(s.res.stone)}</span></div>
-        <div class="row"><span>🏠 ${s.houses}</span><span>🌾 ${s.farms}</span><span>⛏️ ${s.mines}</span></div>
+        <div class="row"><span>🔬 ${fm.name} T${k.techTier}${next?` → ${next.name}`:" (max)"}</span></div>
+        ${next?`<div class="kbar"><i style="width:${clamp(k.research/next.cost*100,0,100)}%;background:var(--accent)"></i></div>`:""}
+        <div class="row"><span>Pop</span><b>${s.pop}/${s.capacity}</b><span>⚔️ ${m.military}</span></div>
+        <div class="row"><span>🍖 ${Math.floor(s.res.food)}</span><span>🪵 ${Math.floor(s.res.wood)}</span><span>⛏️ ${Math.floor(s.res.stone)}</span>${k.faction===FACTION.MAGIC?`<span>✨ ${Math.floor(s.res.mana)}</span>`:""}</div>
+        <div class="row"><span>🏠 ${b.tent+b.house+b.palace}</span><span>🌾 ${b.farm+b.windmill}</span><span>🏰 ${b.barracks+b.watchtower}</span>${k.faction===FACTION.MAGIC?`<span>🔮 ${b.shrine+b.mage_tower}</span>`:""}</div>
+        <div class="row"><span>🏚️ Homeless ${homeless}</span><span style="color:${crimeCol}">🗡️ Crime ${crime}%</span></div>
         <div class="row"><span>Happiness</span><b style="color:${hcol}">${h}%</b></div>
         <div class="kbar"><i style="width:${h}%;background:${hcol}"></i></div>
       </div>`;
