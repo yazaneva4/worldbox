@@ -228,6 +228,41 @@ body{
 }
 #toast.show{opacity:1}
 
+/* welcome / onboarding overlay */
+#welcome{
+  position:absolute;inset:0;z-index:20;
+  display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 40%, rgba(30,32,40,.82), rgba(12,13,16,.94));
+  backdrop-filter:blur(2px);
+}
+#welcome.hidden{display:none}
+.wbox{
+  width:min(560px,90%);
+  background:var(--panel);border:2px solid var(--border);border-radius:10px;
+  padding:22px 22px 18px;box-shadow:0 10px 40px rgba(0,0,0,.6);text-align:center;
+}
+.wbox h1{font-size:26px;color:var(--gold);text-shadow:2px 2px 0 #000;margin-bottom:8px}
+.wsub{font-size:12.5px;color:var(--text-dim);line-height:1.5;margin-bottom:18px;padding:0 6px}
+.wbtns{display:flex;gap:12px;margin-bottom:16px}
+.wbtn{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
+  background:var(--panel-3);border:2px solid var(--border);border-radius:8px;
+  padding:14px 10px;cursor:pointer;color:var(--text);
+  box-shadow:0 3px 0 rgba(0,0,0,.4);transition:transform .06s, border-color .15s, background .15s;
+}
+.wbtn:hover{transform:translateY(-2px);border-color:var(--accent);background:#3a3d45}
+.wbtn:active{transform:translateY(1px);box-shadow:none}
+.wbtn.primary{border-color:var(--success)}
+.wbtn.primary:hover{border-color:var(--success);background:#22331f}
+.wbtn .wi{font-size:30px}
+.wbtn .wt{font-size:14px;font-weight:bold}
+.wbtn .wd{font-size:10px;color:var(--text-dim);line-height:1.35}
+.wtips{
+  font-size:10.5px;color:var(--text-dim);line-height:1.55;
+  background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:9px 11px;text-align:left;
+}
+.wtips b{color:var(--accent)}
+
 /* ====================  RIGHT CHRONICLE PANEL  ============================= */
 #rightpanel{
   grid-area:right;
@@ -318,7 +353,8 @@ body{
     <button class="ctrlbtn active pixel" id="btn-s1" data-speed="1">x1</button>
     <button class="ctrlbtn pixel" id="btn-s2" data-speed="2">x2</button>
     <button class="ctrlbtn pixel" id="btn-s5" data-speed="5">x5</button>
-    <button class="ctrlbtn danger pixel" id="btn-reset" title="Generate a brand new world">↻ Reset</button>
+    <button class="ctrlbtn pixel" id="btn-generate" title="Generate a random procedural world (fire & life split by a river)">🌍 Generate</button>
+    <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the world back to a blank canvas">↻ Reset</button>
   </div>
 
   <!-- ===================  LEFT GOD POWERS  ============================= -->
@@ -339,8 +375,34 @@ body{
       <button id="zoom-out" title="Zoom Out">－</button>
       <button id="zoom-home" title="Reset Camera">⌂</button>
     </div>
-    <div id="hint">Middle-drag to pan · Scroll to zoom · Left-click to use power</div>
+    <div id="hint">Blank canvas — paint terrain &amp; place life · Middle-drag pan · Scroll zoom</div>
     <div id="toast"></div>
+
+    <!-- Welcome / onboarding overlay: the world starts empty; the player
+         chooses to build on a blank canvas or roll a random world. -->
+    <div id="welcome">
+      <div class="wbox">
+        <h1 class="pixel">⚡ Pixel God Simulator</h1>
+        <p class="wsub">Your world begins as an empty canvas. You are the god — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
+        <div class="wbtns">
+          <button id="w-blank" class="wbtn primary">
+            <span class="wi">🗺️</span>
+            <span class="wt">Blank Canvas</span>
+            <span class="wd">Start from an empty world and build everything yourself.</span>
+          </button>
+          <button id="w-gen" class="wbtn">
+            <span class="wi">🌍</span>
+            <span class="wt">Random World</span>
+            <span class="wd">Generate a wasteland-and-grassland map split by a river.</span>
+          </button>
+        </div>
+        <div class="wtips">
+          <b>How to play:</b> pick a <b>God Power</b> on the left, then click the world.
+          Paint <b>Grass &amp; Trees</b> to make land habitable, drop <b>Humans</b> or <b>Elves</b>, then press
+          <b>▶ Play</b> and watch villages grow into kingdoms. Unleash <b>Disasters</b> to test them.
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===================  RIGHT CHRONICLE  ============================= -->
@@ -592,6 +654,21 @@ class World{
         else if(d<r){ t.biome=BIOME.CRATER; t.temperature=clamp(t.temperature+0.3,0,1); t.fertility*=0.3; }
         else { t.biome=BIOME.ASH; t.fertility*=0.5; }
       }
+    }
+    this.dirty=true;
+  }
+
+  /* Blank canvas: a clean, empty green plain with nothing on it — no rivers,
+     no forests, no wasteland, no creatures. This is the sandbox's starting
+     state, from which the player shapes everything. Fertility is set a touch
+     high so that painted or naturally-regrown forests can take hold and give
+     early settlements the wood they need to grow. */
+  blank(){
+    for(let i=0;i<this.tiles.length;i++){
+      const t=this.tiles[i];
+      t.biome=BIOME.GRASS; t.resource=RES.NONE; t.structure=STRUCT.NONE;
+      t.entity=null; t.health=100; t.fertility=0.6; t.temperature=0.5;
+      t.owner=-1; t.burn=0; t.acid=0; t.variant=(i*7)%3; t.growth=0;
     }
     this.dirty=true;
   }
@@ -2038,7 +2115,12 @@ class UIManager{
     [["btn-s1",1],["btn-s2",2],["btn-s5",5]].forEach(([id,sp])=>{
       document.getElementById(id).addEventListener("click",()=>g.sim.setSpeed(sp));
     });
+    document.getElementById("btn-generate").addEventListener("click",()=>g.generateWorld());
     document.getElementById("btn-reset").addEventListener("click",()=>g.reset());
+
+    // welcome / onboarding overlay
+    document.getElementById("w-blank").addEventListener("click",()=>{ g.reset(); this.hideWelcome(); });
+    document.getElementById("w-gen").addEventListener("click",()=>{ g.generateWorld(); this.hideWelcome(); });
 
     // zoom controls
     document.getElementById("zoom-in").addEventListener("click",()=>this._zoomBy(1.25));
@@ -2227,6 +2309,10 @@ class UIManager{
     this._toastTimer=setTimeout(()=>el.classList.remove("show"),1600);
   }
 
+  /* onboarding overlay control */
+  showWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.remove("hidden"); }
+  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.toast("Pick a God Power and click the world"); }
+
   /* --- right-panel renderers --------------------------------------------- */
   renderChronicle(){
     const host=document.getElementById("page-chronicle");
@@ -2267,18 +2353,13 @@ class UIManager{
    ========================================================================== */
 class Game{
   constructor(){
-    this.seed=(Math.random()*1e9)|0;
-    this.world=new World(CONFIG.W,CONFIG.H);
-    this.world.generate(this.seed);
-
-    // managers
-    this.sim=new SimulationManager(this);
-    this.entities=new EntityManager(this);
-    this.settlements=new SettlementManager(this);
-    this.disasters=new DisasterManager(this);
+    // persistent, world-independent subsystems
     this.effects=new EffectManager(this);
-    this.chronicle=new Chronicle(this);
     this.camera=new Camera(this);
+    this.sim=new SimulationManager(this);
+
+    // build the very first world as a BLANK canvas (the sandbox starts empty)
+    this._buildWorld("blank");
 
     // view
     this.renderer=new Renderer(this,document.getElementById("world"));
@@ -2287,51 +2368,67 @@ class Game{
 
     // UI last (needs renderer + managers)
     this.ui=new UIManager(this);
-
-    this._seedWorld();
     this.ui.renderChronicle();
     this.ui.renderKingdoms();
     this.ui.renderAchievements();
 
     this.last=performance.now();
     this._kingdomsCd=0;
-    this.chronicle.log("🌍 A new world is born, split between fire and life.","found");
+    // Show the onboarding overlay; the world sits empty & waiting behind it.
+    this.ui.showWelcome();
+    this.chronicle.log("🌌 An empty world awaits your hand. Shape the land and give it life.","found");
     requestAnimationFrame(this.loop.bind(this));
   }
 
-  /* place a small starting population so there is something to watch */
-  _seedWorld(){
-    const w=this.world;
-    // a cluster of humans on the fertile right bank
-    const hx=Math.floor(w.w*0.72), hy=Math.floor(w.h*0.5);
-    for(let i=0;i<8;i++) this.entities.spawn(RACE.HUMAN, hx+rint(Math.random,-3,3), hy+rint(Math.random,-3,3));
-    // a grove of elves further into the forest
-    const ex=Math.floor(w.w*0.85), ey=Math.floor(w.h*0.7);
-    for(let i=0;i<5;i++) this.entities.spawn(RACE.ELF, ex+rint(Math.random,-3,3), ey+rint(Math.random,-3,3));
-    // a lurking orc warband on the wasteland border
-    const ox=Math.floor(w.w*0.4), oy=Math.floor(w.h*0.35);
-    for(let i=0;i<3;i++) this.entities.spawn(RACE.ORC, ox+rint(Math.random,-2,2), oy+rint(Math.random,-2,2));
-  }
-
-  reset(){
+  /* Construct a fresh world + all world-scoped managers. `mode` is either
+     "blank" (empty green canvas) or "generate" (procedural fire/life map).
+     No creatures are ever pre-placed — populating the world is the player's
+     job, which keeps every playthrough a true sandbox. */
+  _buildWorld(mode){
     this.seed=(Math.random()*1e9)|0;
     SETTLE_ID=1; ENTITY_ID=1;
     this.world=new World(CONFIG.W,CONFIG.H);
-    this.world.generate(this.seed);
+    if(mode==="generate") this.world.generate(this.seed);
+    else { setNameRng(makeRNG(this.seed)); this.world.blank(); }
+
+    // world-scoped managers are rebuilt so nothing leaks between worlds
     this.entities=new EntityManager(this);
     this.settlements=new SettlementManager(this);
     this.disasters=new DisasterManager(this);
-    this.effects.clear();
     this.chronicle=new Chronicle(this);
-    this.sim.ticks=0; this.sim.acc=0; this.sim.queue.length=0; this.sim.season=0; this.sim.paused=false;
+    if(this.effects) this.effects.clear();
+
+    // reset the clock
+    this.sim.ticks=0; this.sim.acc=0; this.sim.queue.length=0;
+    this.sim.season=0; this.sim.randomEventCd=rint(Math.random,14,26);
+  }
+
+  /* Re-run world setup at runtime, refresh camera/UI. Shared by Reset &
+     Generate buttons and by the welcome overlay. */
+  _remake(mode){
+    this._buildWorld(mode);
     this.renderer=new Renderer(this,document.getElementById("world"));
     this.renderer.resize();
     this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
-    this._seedWorld();
-    this.chronicle.log("🌍 The god remakes the world anew.","found");
-    this.ui.renderChronicle(); this.ui.renderKingdoms(); this.ui.renderAchievements();
-    this.ui.syncControls();
-    this.ui.toast("World regenerated");
+    if(this.ui){
+      this.ui.selectedSettlement=null;
+      this.ui.renderChronicle(); this.ui.renderKingdoms(); this.ui.renderAchievements();
+      this.ui.syncControls();
+    }
+  }
+
+  /* Reset button -> wipe the world back to a blank canvas. */
+  reset(){
+    this._remake("blank");
+    this.chronicle.log("🌌 The world is wiped clean — a blank canvas once more.","found");
+    this.ui.toast("Cleared to blank canvas");
+  }
+
+  /* Generate button -> roll a fresh procedural world (still unpopulated). */
+  generateWorld(){
+    this._remake("generate");
+    this.chronicle.log("🌍 A world takes shape: fire and ash to the west, green life to the east.","found");
+    this.ui.toast("Random world generated");
   }
 
   /* --- world-level per-tick upkeep (regrowth, cooling, seasons) ---------- */
