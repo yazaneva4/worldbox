@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pixel God Simulator — Sandbox Civilization Engine</title>
+<style>
+/* ============================================================================
+   PIXEL GOD SIMULATOR  —  Global Styling
+   Premium retro-fantasy aesthetic. All layout via CSS grid for a responsive
+   desktop experience. Colours pulled from the requested palette.
+   ========================================================================== */
+:root{
+  --bg:        #1e1e24;   /* application background            */
+  --panel:     #2b2d31;   /* side / top panels                */
+  --panel-2:   #34363c;   /* raised elements inside panels     */
+  --panel-3:   #3f424a;   /* button faces                      */
+  --accent:    #4fc3f7;   /* primary accent (cyan)             */
+  --success:   #7ed957;   /* positive / go                     */
+  --danger:    #ff5c5c;   /* destructive / warning             */
+  --gold:      #ffcf5c;   /* highlights, year, achievements    */
+  --text:      #e7e9ee;   /* main text                         */
+  --text-dim:  #9aa0ac;   /* secondary text                    */
+  --border:    #14151a;   /* deep border lines                 */
+  --shadow:    0 3px 0 rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Segoe UI",Tahoma,system-ui,sans-serif;
+  overflow:hidden;
+  user-select:none;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* Pixel-flavoured font used for headings & buttons */
+.pixel{
+  font-family:"Courier New",monospace;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  font-weight:bold;
+}
+
+/* ------- Master application grid ------------------------------------------ */
+#app{
+  display:grid;
+  grid-template-rows:48px 1fr;
+  grid-template-columns:210px 1fr 260px;
+  grid-template-areas:
+    "top top top"
+    "left center right";
+  height:100vh;
+  width:100vw;
+  gap:4px;
+  padding:4px;
+}
+
+/* ====================  TOP STATUS BAR  ==================================== */
+#topbar{
+  grid-area:top;
+  background:var(--panel);
+  border:2px solid var(--border);
+  border-radius:6px;
+  display:flex;
+  align-items:center;
+  padding:0 10px;
+  gap:6px;
+  box-shadow:var(--shadow);
+}
+.stat{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  background:var(--panel-2);
+  padding:4px 9px;
+  border-radius:5px;
+  border:1px solid var(--border);
+  font-size:12px;
+  white-space:nowrap;
+}
+.stat .ico{font-size:14px;line-height:1}
+.stat .val{font-weight:bold;color:var(--text);min-width:14px;text-align:right}
+.stat.year .val{color:var(--gold)}
+.stat.pop  .val{color:var(--accent)}
+.stat.food .val{color:var(--success)}
+.spacer{flex:1}
+
+/* season pill */
+#seasonPill{
+  padding:4px 10px;border-radius:5px;font-size:11px;border:1px solid var(--border);
+}
+
+/* control buttons on the right of the top bar */
+.ctrlbtn{
+  background:var(--panel-3);
+  color:var(--text);
+  border:2px solid var(--border);
+  border-radius:5px;
+  padding:5px 9px;
+  font-size:11px;
+  cursor:pointer;
+  box-shadow:0 2px 0 rgba(0,0,0,.4);
+  transition:transform .05s, background .15s, color .15s;
+}
+.ctrlbtn:hover{background:#4a4d55}
+.ctrlbtn:active{transform:translateY(2px);box-shadow:none}
+.ctrlbtn.active{background:var(--accent);color:#08222e;border-color:#2b90c4}
+.ctrlbtn.danger:hover{background:var(--danger);color:#2a0808}
+.ctrlbtn.play.active{background:var(--success);color:#0c2a08;border-color:#4f9e34}
+
+/* ====================  LEFT GOD-POWERS PANEL  ============================= */
+#leftpanel{
+  grid-area:left;
+  background:var(--panel);
+  border:2px solid var(--border);
+  border-radius:6px;
+  display:flex;
+  flex-direction:column;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+#leftpanel h1{
+  font-size:15px;color:var(--gold);
+  padding:10px 10px 6px;
+  text-shadow:1px 1px 0 #000;
+}
+.godpowers{
+  flex:1;
+  overflow-y:auto;
+  padding:0 8px 8px;
+}
+.godpowers::-webkit-scrollbar{width:8px}
+.godpowers::-webkit-scrollbar-thumb{background:var(--panel-3);border-radius:4px}
+.category{margin-top:8px}
+.category h2{
+  font-size:11px;color:var(--text-dim);
+  border-bottom:1px solid var(--border);
+  padding-bottom:3px;margin-bottom:6px;
+}
+.tool-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+}
+.tool{
+  position:relative;
+  background:var(--panel-3);
+  border:2px solid var(--border);
+  border-radius:5px;
+  padding:6px 3px 5px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  cursor:pointer;
+  box-shadow:0 2px 0 rgba(0,0,0,.4);
+  transition:transform .05s, background .12s, border-color .12s;
+}
+.tool:hover{background:#4a4d55;transform:translateY(-1px)}
+.tool:active{transform:translateY(1px)}
+.tool .ti{font-size:18px;line-height:1}
+.tool .tn{font-size:9px;color:var(--text-dim);text-align:center}
+.tool.active{
+  border-color:var(--accent);
+  background:#1d3540;
+  box-shadow:0 0 0 1px var(--accent), 0 2px 0 rgba(0,0,0,.4);
+}
+.tool.active .tn{color:var(--accent)}
+/* colour-key the category swatch bar */
+.cat-nature   .tool.active{border-color:var(--success);box-shadow:0 0 0 1px var(--success),0 2px 0 rgba(0,0,0,.4)}
+.cat-disaster .tool.active{border-color:var(--danger); box-shadow:0 0 0 1px var(--danger), 0 2px 0 rgba(0,0,0,.4)}
+
+/* brush controls */
+#brushbox{
+  padding:8px;border-top:2px solid var(--border);background:var(--panel-2);
+  font-size:10px;color:var(--text-dim);
+}
+#brushbox label{display:flex;align-items:center;gap:6px}
+#brushSize{flex:1}
+#brushVal{color:var(--accent);font-weight:bold;min-width:12px;text-align:right}
+
+/* tool description box */
+#tooldesc{
+  padding:8px;border-top:2px solid var(--border);
+  background:var(--panel-2);font-size:10.5px;line-height:1.4;
+  color:var(--text-dim);min-height:52px;
+}
+#tooldesc b{color:var(--accent)}
+
+/* ====================  CENTER VIEWPORT  ================================== */
+#center{
+  grid-area:center;
+  position:relative;
+  background:#0c0d10;
+  border:2px solid var(--border);
+  border-radius:6px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+}
+#world{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:crosshair}
+
+/* floating zoom controls */
+#zoomctrl{
+  position:absolute;left:10px;bottom:10px;
+  display:flex;flex-direction:column;gap:4px;z-index:5;
+}
+#zoomctrl button{
+  width:34px;height:34px;font-size:16px;
+  background:var(--panel);color:var(--text);
+  border:2px solid var(--border);border-radius:5px;cursor:pointer;
+  box-shadow:0 2px 0 rgba(0,0,0,.4);
+}
+#zoomctrl button:hover{background:var(--panel-3)}
+#zoomctrl button:active{transform:translateY(2px);box-shadow:none}
+
+/* on-canvas hint */
+#hint{
+  position:absolute;right:10px;bottom:10px;z-index:5;
+  background:rgba(20,21,26,.8);border:1px solid var(--border);
+  border-radius:5px;padding:5px 9px;font-size:10px;color:var(--text-dim);
+  pointer-events:none;
+}
+#toast{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  z-index:6;background:rgba(20,21,26,.9);border:1px solid var(--accent);
+  color:var(--text);border-radius:5px;padding:6px 14px;font-size:12px;
+  opacity:0;transition:opacity .3s;pointer-events:none;max-width:80%;text-align:center;
+}
+#toast.show{opacity:1}
+
+/* ====================  RIGHT CHRONICLE PANEL  ============================= */
+#rightpanel{
+  grid-area:right;
+  background:var(--panel);
+  border:2px solid var(--border);
+  border-radius:6px;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.tabs{display:flex;border-bottom:2px solid var(--border)}
+.tab{
+  flex:1;padding:7px 4px;text-align:center;font-size:10px;
+  background:var(--panel-2);cursor:pointer;color:var(--text-dim);
+  border-right:1px solid var(--border);
+}
+.tab:last-child{border-right:none}
+.tab.active{background:var(--panel);color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-2px}
+.tabpage{display:none;flex:1;overflow-y:auto;padding:8px}
+.tabpage.active{display:block}
+.tabpage::-webkit-scrollbar{width:8px}
+.tabpage::-webkit-scrollbar-thumb{background:var(--panel-3);border-radius:4px}
+
+/* chronicle entries */
+.logentry{
+  font-size:10.5px;line-height:1.4;padding:5px 7px;margin-bottom:4px;
+  background:var(--panel-2);border-left:3px solid var(--panel-3);border-radius:3px;
+}
+.logentry .yr{color:var(--gold);font-weight:bold;margin-right:4px}
+.logentry.birth   {border-left-color:var(--success)}
+.logentry.death   {border-left-color:var(--danger)}
+.logentry.war     {border-left-color:#e0682f}
+.logentry.disaster{border-left-color:var(--danger)}
+.logentry.found   {border-left-color:var(--accent)}
+.logentry.trade   {border-left-color:var(--gold)}
+.logentry.epic    {border-left-color:var(--gold);background:#3a331d}
+
+/* settlement / kingdom cards */
+.kcard{
+  background:var(--panel-2);border:1px solid var(--border);border-radius:5px;
+  padding:8px;margin-bottom:7px;font-size:10.5px;cursor:pointer;
+  border-left:4px solid var(--accent);
+}
+.kcard:hover{background:var(--panel-3)}
+.kcard.selected{outline:2px solid var(--accent)}
+.kcard h3{font-size:12px;color:var(--text);margin-bottom:3px}
+.kcard .race{font-size:9px;color:var(--text-dim);text-transform:uppercase}
+.kbar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:4px}
+.kbar > i{display:block;height:100%}
+.row{display:flex;justify-content:space-between;margin-top:3px;color:var(--text-dim)}
+.row b{color:var(--text)}
+
+/* achievements */
+.ach{
+  display:flex;gap:8px;align-items:center;
+  background:var(--panel-2);border:1px solid var(--border);border-radius:5px;
+  padding:6px 8px;margin-bottom:5px;font-size:10.5px;
+}
+.ach .ai{font-size:18px}
+.ach .at{color:var(--gold);font-weight:bold}
+.ach .ad{color:var(--text-dim);font-size:9.5px}
+
+.empty{color:var(--text-dim);font-size:11px;text-align:center;padding:20px 10px;line-height:1.5}
+
+/* small legend */
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9.5px;color:var(--text-dim)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:12px;height:12px;border-radius:2px;display:inline-block;border:1px solid var(--border)}
+
+@media(max-width:1100px){
+  #app{grid-template-columns:180px 1fr 210px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================  TOP STATUS BAR  ============================== -->
+  <div id="topbar">
+    <div class="stat year"><span class="ico">📅</span>Year <span class="val" id="s-year">0</span></div>
+    <div class="stat pop"><span class="ico">👥</span><span class="val" id="s-pop">0</span></div>
+    <div class="stat food"><span class="ico">🍖</span><span class="val" id="s-food">0</span></div>
+    <div class="stat"><span class="ico">🪵</span><span class="val" id="s-wood">0</span></div>
+    <div class="stat"><span class="ico">⛏️</span><span class="val" id="s-stone">0</span></div>
+    <div class="stat"><span class="ico">🏰</span><span class="val" id="s-settle">0</span></div>
+    <div id="seasonPill" class="pixel">🌱 Spring</div>
+    <div class="spacer"></div>
+    <button class="ctrlbtn play active pixel" id="btn-play" title="Play / Pause">⏸ Pause</button>
+    <button class="ctrlbtn active pixel" id="btn-s1" data-speed="1">x1</button>
+    <button class="ctrlbtn pixel" id="btn-s2" data-speed="2">x2</button>
+    <button class="ctrlbtn pixel" id="btn-s5" data-speed="5">x5</button>
+    <button class="ctrlbtn danger pixel" id="btn-reset" title="Generate a brand new world">↻ Reset</button>
+  </div>
+
+  <!-- ===================  LEFT GOD POWERS  ============================= -->
+  <div id="leftpanel">
+    <h1 class="pixel">⚡ God Powers</h1>
+    <div class="godpowers" id="godpowers"><!-- tools injected by UIManager --></div>
+    <div id="brushbox">
+      <label>Brush <input type="range" id="brushSize" min="0" max="4" value="1"><span id="brushVal">1</span></label>
+    </div>
+    <div id="tooldesc">Select a <b>God Power</b> and click the world to shape it.</div>
+  </div>
+
+  <!-- ===================  CENTER VIEWPORT  ============================= -->
+  <div id="center">
+    <canvas id="world"></canvas>
+    <div id="zoomctrl">
+      <button id="zoom-in"  title="Zoom In">＋</button>
+      <button id="zoom-out" title="Zoom Out">－</button>
+      <button id="zoom-home" title="Reset Camera">⌂</button>
+    </div>
+    <div id="hint">Middle-drag to pan · Scroll to zoom · Left-click to use power</div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- ===================  RIGHT CHRONICLE  ============================= -->
+  <div id="rightpanel">
+    <div class="tabs">
+      <div class="tab active" data-tab="chronicle">📜 Chronicle</div>
+      <div class="tab" data-tab="kingdoms">🏰 Realms</div>
+      <div class="tab" data-tab="achieve">🏆 Legends</div>
+    </div>
+    <div class="tabpage active" id="page-chronicle"></div>
+    <div class="tabpage" id="page-kingdoms"></div>
+    <div class="tabpage" id="page-achieve"></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   PIXEL GOD SIMULATOR
+   A WorldBox-inspired sandbox civilization engine, in a single file.
+
+   Architecture (clean separation of concerns):
+     • World / Tile          -> world state (the grid & its data)
+     • SimulationManager     -> the clock: ticks, pause, speed, event queue
+     • EntityManager         -> creatures & their AI (human/orc/elf/monster)
+     • SettlementManager     -> kingdoms, villages, dynasties, diplomacy, economy
+     • DisasterManager       -> lightning/fire/acid/meteor/earthquake
+     • EffectManager         -> transient visual animations
+     • Renderer              -> draws terrain/resources/structures/entities/fx
+     • UIManager             -> god-power panel, HUD, chronicle, input
+     • Chronicle             -> emergent-storytelling event log & achievements
+     • Game                  -> wires everything together, owns the main loop
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   0.  CONFIGURATION & SMALL UTILITIES
+   -------------------------------------------------------------------------- */
+const CONFIG = {
+  W: 90,               // world width  in tiles (>= 80)
+  H: 54,               // world height in tiles (>= 50)
+  TILE: 16,            // pixel size of a tile on the offscreen terrain canvas
+  TICKS_PER_YEAR: 48,  // simulation ticks that make up one in-world year
+  BASE_TPS: 6,         // simulation ticks per second at speed x1
+  MAX_ENTITIES: 340,   // hard cap to protect the frame budget
+};
+
+/* Deterministic-ish PRNG (mulberry32) so a "seed" produces a repeatable world */
+function makeRNG(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const lerp  = (a,b,t)=> a+(b-a)*t;
+const dist2 = (x1,y1,x2,y2)=>{const dx=x1-x2,dy=y1-y2;return dx*dx+dy*dy;};
+const rint  = (rng,a,b)=> a + Math.floor(rng()*(b-a+1));
+const choice= (rng,arr)=> arr[Math.floor(rng()*arr.length)];
+
+/* Cheap value-noise for organic terrain, seeded through the RNG */
+function makeNoise(rng){
+  const G = 256, grad = new Float32Array(G*2);
+  for(let i=0;i<G;i++){const a=rng()*Math.PI*2;grad[i*2]=Math.cos(a);grad[i*2+1]=Math.sin(a);}
+  const perm = new Uint8Array(512);
+  for(let i=0;i<256;i++)perm[i]=i;
+  for(let i=255;i>0;i--){const j=Math.floor(rng()*(i+1));[perm[i],perm[j]]=[perm[j],perm[i]];}
+  for(let i=0;i<256;i++)perm[i+256]=perm[i];
+  const fade=t=>t*t*t*(t*(t*6-15)+10);
+  function grad2(ix,iy,x,y){const g=perm[(ix+perm[iy&255])&255]&(G-1);return grad[g*2]*x+grad[g*2+1]*y;}
+  return function(x,y){
+    const X=Math.floor(x)&255,Y=Math.floor(y)&255;
+    const xf=x-Math.floor(x),yf=y-Math.floor(y);
+    const u=fade(xf),v=fade(yf);
+    const n00=grad2(X,Y,xf,yf),n10=grad2(X+1,Y,xf-1,yf);
+    const n01=grad2(X,Y+1,xf,yf-1),n11=grad2(X+1,Y+1,xf-1,yf-1);
+    return lerp(lerp(n00,n10,u),lerp(n01,n11,u),v); // ~[-1,1]
+  };
+}
+
+/* --------------------------------------------------------------------------
+   1.  NAME GENERATORS  (kingdoms, villages, people)
+       Emergent civilizations feel alive when everything has a name.
+   -------------------------------------------------------------------------- */
+const NAMES = {
+  kingPre : ["Aeth","Bryn","Cael","Dorn","Eld","Fal","Gor","Hald","Ith","Kaer","Lor","Mor","Nor","Oth","Pyr","Quel","Rav","Sil","Thal","Ur","Vex","Wyn","Zor","Drak","Fen","Volk"],
+  kingSuf : ["mark","gard","heim","dor","land","vale","reach","fell","hold","spire","moor","wick","stead","crest","gorod","ovia","aria","thia"],
+  vilPre  : ["Oak","Ash","Riven","Mill","Stone","Bram","Fox","Green","Frost","Ember","Pine","Willow","Red","Gray","Silver","Thorn","Dun","Wex","Hart","Bel","Cold","Long"],
+  vilSuf  : ["brook","ford","ton","bury","dale","field","haven","gate","wood","hollow","shire","mere","cross","by","stead","reach","watch","fall"],
+  first   : ["Alaric","Brenna","Corvin","Dara","Edric","Fiora","Garrick","Hilda","Ivor","Jora","Kael","Lyra","Magnus","Nyla","Osric","Perrin","Quilla","Rurik","Sable","Tarin","Ulric","Vesna","Wulf","Xandra","Yorick","Zia","Bram","Mira","Doran","Selka","Tobin","Runa"],
+  epithet : ["the Bold","the Wise","the Cruel","the Kind","Ironhand","the Young","Stormborn","the Elder","Oakheart","the Fox","Longbeard","the Radiant","Ashwalker","the Grim","Fairhair","the Undying"]
+};
+let _nameRng = Math.random;
+const setNameRng = r => _nameRng = r;
+const kingdomName = ()=> choice(_nameRng,NAMES.kingPre)+choice(_nameRng,NAMES.kingSuf);
+const villageName = ()=> choice(_nameRng,NAMES.vilPre)+choice(_nameRng,NAMES.vilSuf);
+const personName  = ()=> choice(_nameRng,NAMES.first);
+const rulerName   = ()=> choice(_nameRng,NAMES.first)+" "+choice(_nameRng,NAMES.epithet);
+
+/* --------------------------------------------------------------------------
+   2.  ENUMS  (biomes, resources, structures, races)
+   -------------------------------------------------------------------------- */
+const BIOME = {
+  DEEP_WATER:0, WATER:1, SAND:2, GRASS:3, FERTILE:4, FOREST_FLOOR:5,
+  ROCK:6, ASH:7, LAVA:8, CRATER:9, SNOW:10, DIRT:11
+};
+const RES = { NONE:0, TREE:1, STONE:2, FLOWER:3, BUSH:4, PINE:5 };
+const STRUCT = { NONE:0, HOUSE:1, FARM:2, MINE:3, ROAD:4, TOWNHALL:5, RUIN:6 };
+const RACE = { HUMAN:"human", ORC:"orc", ELF:"elf", MONSTER:"monster" };
+
+/* Palette used by the renderer for each biome. Two shades give cheap texture. */
+const BIOME_COL = {
+  [BIOME.DEEP_WATER]:["#1b4a6b","#17415f"],
+  [BIOME.WATER]     :["#2f79a8","#2a6f9c"],
+  [BIOME.SAND]      :["#d8c98f","#cdbd80"],
+  [BIOME.GRASS]     :["#4f8f3a","#478433"],
+  [BIOME.FERTILE]   :["#3f7d2e","#376f28"],
+  [BIOME.FOREST_FLOOR]:["#3a6b2c","#335f27"],
+  [BIOME.ROCK]      :["#4a4750","#423f48"],
+  [BIOME.ASH]       :["#5a5560","#514c57"],
+  [BIOME.LAVA]      :["#e0662a","#c9541f"],
+  [BIOME.CRATER]    :["#332f38","#2b2830"],
+  [BIOME.SNOW]      :["#dfe6ee","#cfd7e0"],
+  [BIOME.DIRT]      :["#6b5138","#5f4830"],
+};
+
+/* --------------------------------------------------------------------------
+   3.  TILE  —  a single cell of the world grid
+   -------------------------------------------------------------------------- */
+class Tile{
+  constructor(){
+    this.biome = BIOME.GRASS;
+    this.resource = RES.NONE;
+    this.structure = STRUCT.NONE;
+    this.entity = null;          // (reserved) primary occupant reference
+    this.health = 100;           // durability of resource/structure on the tile
+    this.fertility = 0.5;        // 0..1 — affects farm output & tree growth
+    this.temperature = 0.5;      // 0..1 — hot(volcanic) .. cold(snow)
+    this.owner = -1;             // settlement id owning this tile (territory)
+    this.burn = 0;               // active fire intensity 0..1
+    this.acid = 0;               // acid rain lingering damage timer
+    this.variant = 0;            // per-tile texture jitter (set at generation)
+    this.growth = 0;             // used for crop/tree regrowth timers
+  }
+  get walkable(){
+    return this.biome!==BIOME.DEEP_WATER && this.biome!==BIOME.WATER &&
+           this.biome!==BIOME.LAVA;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4.  WORLD  —  owns the grid and procedural generation
+   -------------------------------------------------------------------------- */
+class World{
+  constructor(w,h){
+    this.w=w; this.h=h;
+    this.tiles = new Array(w*h);
+    for(let i=0;i<w*h;i++) this.tiles[i]=new Tile();
+    this.dirty = true;           // renderer redraws terrain when true
+  }
+  idx(x,y){ return y*this.w+x; }
+  inBounds(x,y){ return x>=0 && y>=0 && x<this.w && y<this.h; }
+  get(x,y){ return this.inBounds(x,y)? this.tiles[y*this.w+x] : null; }
+
+  /* Generate the two-region world: volcanic wasteland (left) vs grassland
+     (right), split by a procedurally-carved winding river down the centre. */
+  generate(seed){
+    const rng = makeRNG(seed);
+    setNameRng(makeRNG((seed*2654435761)>>>0));
+    const n1 = makeNoise(rng), n2 = makeNoise(rng);
+    const {w,h}=this;
+
+    // The river's centreline meanders around the middle column.
+    const riverCol = new Float32Array(h);
+    let rc = w*0.5;
+    for(let y=0;y<h;y++){
+      rc += (n1(0, y*0.12)) * 1.9;                 // wander left/right
+      rc += (w*0.5 - rc)*0.03;                      // gentle pull to centre
+      riverCol[y] = rc;
+    }
+
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const t = this.tiles[this.idx(x,y)];
+        t.variant = Math.floor(rng()*3);
+        const distRiver = x - riverCol[y];
+        const absR = Math.abs(distRiver);
+        // river width breathes a little along its length
+        const rwidth = 2.2 + n2(x*0.15, y*0.15)*1.1;
+
+        if(absR < rwidth){
+          // ---- RIVER ----
+          t.biome = absR < rwidth*0.5 ? BIOME.DEEP_WATER : BIOME.WATER;
+          t.temperature = 0.5; t.fertility = 0.9;
+        } else if(distRiver < 0){
+          // ---- LEFT: VOLCANIC WASTELAND ----
+          const v = n1(x*0.11, y*0.11);
+          t.temperature = clamp(0.7 + v*0.3, 0, 1);
+          t.fertility = 0.05;
+          if(absR < rwidth+1.4){ t.biome=BIOME.SAND; t.fertility=0.3; }
+          else if(v > 0.42){ t.biome=BIOME.LAVA; }
+          else if(v > 0.15){ t.biome=BIOME.CRATER; }
+          else if(v > -0.25){ t.biome=BIOME.ROCK; if(rng()<0.05){t.resource=RES.STONE;t.health=100;} }
+          else { t.biome=BIOME.ASH; }
+        } else {
+          // ---- RIGHT: LUSH GRASSLAND ----
+          const g = n2(x*0.09, y*0.09);
+          const f = n1(x*0.16+40, y*0.16+40);
+          t.temperature = clamp(0.45 - g*0.15, 0, 1);
+          t.fertility = clamp(0.55 + g*0.4, 0.2, 1);
+          if(absR < rwidth+1.4){ t.biome=BIOME.SAND; t.fertility=0.6; }
+          else {
+            t.biome = f>0.25 ? BIOME.FOREST_FLOOR : (t.fertility>0.7?BIOME.FERTILE:BIOME.GRASS);
+            // scatter vegetation
+            const r=rng();
+            if(f>0.2){ if(r<0.55) t.resource=RES.TREE; else if(r<0.62) t.resource=RES.PINE; }
+            else if(r<0.10) t.resource=RES.TREE;
+            else if(r<0.20 && t.fertility>0.6) t.resource=RES.FLOWER;
+            else if(r<0.26) t.resource=RES.BUSH;
+            if(t.resource) t.health=100;
+          }
+          // a cold snowy fringe in the far NE corner for variety
+          if(x>w*0.82 && y<h*0.25 && n1(x*0.2,y*0.2)>0.3){ t.biome=BIOME.SNOW; t.temperature=0.05; t.resource = rng()<0.3?RES.PINE:RES.NONE; }
+        }
+      }
+    }
+    // A couple of dormant volcano craters seeded on the wasteland side.
+    for(let i=0;i<3;i++){
+      const vx = rint(rng, 4, Math.floor(w*0.35));
+      const vy = rint(rng, 4, h-5);
+      this.carveCrater(vx,vy,rint(rng,2,3),true);
+    }
+    this.dirty=true;
+  }
+
+  /* Stamp a crater (used by generation & meteor impacts). Lava optional. */
+  carveCrater(cx,cy,r,lavaCore){
+    for(let y=cy-r-1;y<=cy+r+1;y++){
+      for(let x=cx-r-1;x<=cx+r+1;x++){
+        if(!this.inBounds(x,y))continue;
+        const d=Math.sqrt(dist2(x,y,cx,cy));
+        if(d>r+1)continue;
+        const t=this.get(x,y);
+        t.resource=RES.NONE; t.structure=STRUCT.NONE; t.owner=-1; t.burn=0;
+        if(d<r*0.5 && lavaCore){ t.biome=BIOME.LAVA; t.temperature=1; }
+        else if(d<r){ t.biome=BIOME.CRATER; t.temperature=clamp(t.temperature+0.3,0,1); t.fertility*=0.3; }
+        else { t.biome=BIOME.ASH; t.fertility*=0.5; }
+      }
+    }
+    this.dirty=true;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   5.  ENTITY  —  a single creature. Behaviour lives in EntityManager so the
+       data stays lean and the AI stays centralised.
+   -------------------------------------------------------------------------- */
+let ENTITY_ID = 1;
+class Entity{
+  constructor(race,x,y){
+    this.id = ENTITY_ID++;
+    this.race = race;
+    this.x = x; this.y = y;          // continuous tile position
+    this.tx = x; this.ty = y;        // movement target (tile)
+    this.px = x; this.py = y;        // previous tick pos (for smoothing, unused-lite)
+    this.hp = 100;
+    this.hunger = 0;                  // 0 fed .. 100 starving
+    this.age = 0;                     // in years
+    this.maxAge = 55 + Math.floor(Math.random()*35);
+    this.state = "wander";
+    this.job = "idle";
+    this.settlement = null;           // Settlement reference or null (nomad)
+    this.carry = 0;                   // resource units being hauled
+    this.carryType = null;
+    this.name = personName();
+    this.dynasty = null;
+    this.isLeader = false;
+    this.cooldown = 0;                // generic action timer (ticks)
+    this.legendYears = 0;            // survival counter for hero legends
+    this.speed = race===RACE.MONSTER?1.5:(race===RACE.ORC?1.25:1.0); // tiles/sec base
+    this.reproCd = rint(makeRNG((this.id*99)|0),8,16);
+    this.wanderCd = 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   6.  SETTLEMENT  —  a village that can grow into a kingdom.
+   -------------------------------------------------------------------------- */
+let SETTLE_ID = 1;
+class Settlement{
+  constructor(race,cx,cy,foundedYear){
+    this.id = SETTLE_ID++;
+    this.race = race;
+    this.cx = cx; this.cy = cy;                 // town centre (tile)
+    this.name = villageName();
+    this.kingdom = kingdomName();               // realm/dynasty name
+    this.founded = foundedYear;
+    this.members = [];                          // Entity[]
+    this.res = { food: 30, wood: 20, stone: 10 };
+    this.happiness = 70;                        // 0..100
+    this.territory = new Set();                 // packed tile indices
+    this.houses = 0; this.farms = 0; this.mines = 0;
+    this.leader = null;                         // Entity
+    this.dynasty = choice(_nameRng,NAMES.first)+" Dynasty";
+    this.level = 1;                             // hamlet->village->town->city->kingdom
+    this.color = this._pickColor();
+    this.buildCd = 0;
+    this.relations = {};                        // settleId -> -100..100
+    this.tradeCd = rint(_nameRng, 20, 40);
+    this.destroyed = false;
+    this.peakPop = 0;
+    this.wars = 0;
+  }
+  _pickColor(){
+    const pal = {
+      [RACE.HUMAN]:["#4fc3f7","#5b8cff","#c95fff","#ff9f4f"],
+      [RACE.ORC]:["#7ed957","#9ecb3a","#5cae3a"],
+      [RACE.ELF]:["#5ce0b0","#7be07b","#a0e05c"],
+    };
+    const arr = pal[this.race]||["#cccccc"];
+    return arr[SETTLE_ID % arr.length];
+  }
+  get pop(){ return this.members.length; }
+  get capacity(){ return 3 + this.houses*4; }
+  get title(){
+    const p=this.pop;
+    if(p>=45) return "Kingdom";
+    if(p>=28) return "City";
+    if(p>=16) return "Town";
+    if(p>=7)  return "Village";
+    return "Hamlet";
+  }
+}
+
+/* ==========================================================================
+   7.  CHRONICLE  —  emergent-storytelling event log + achievements
+   ========================================================================== */
+class Chronicle{
+  constructor(game){
+    this.game=game;
+    this.entries=[];             // {year,text,type}
+    this.achievements=[];        // {icon,title,desc,year}
+    this._unlocked=new Set();
+  }
+  log(text,type="info"){
+    const year=this.game.sim.year;
+    this.entries.push({year,text,type});
+    if(this.entries.length>240) this.entries.shift();
+    this.game.ui.renderChronicle();
+  }
+  achieve(key,icon,title,desc){
+    if(this._unlocked.has(key))return;
+    this._unlocked.add(key);
+    this.achievements.push({icon,title,desc,year:this.game.sim.year});
+    this.log(`🏆 <b>${title}</b> — ${desc}`,"epic");
+    this.game.ui.toast(`🏆 ${title}`);
+    this.game.ui.renderAchievements();
+  }
+}
+
+/* ==========================================================================
+   8.  SIMULATION MANAGER  —  the clock & the master update loop
+   ========================================================================== */
+class SimulationManager{
+  constructor(game){
+    this.game=game;
+    this.paused=false;
+    this.speed=1;                 // 1 | 2 | 5
+    this.ticks=0;                 // total sim ticks elapsed
+    this.acc=0;                   // fixed-timestep accumulator (seconds)
+    this.queue=[];                // event queue: {at, fn}
+    this.season=0;                // 0 spring 1 summer 2 autumn 3 winter
+    this.randomEventCd=rint(Math.random,14,26);
+  }
+  get year(){ return Math.floor(this.ticks / CONFIG.TICKS_PER_YEAR); }
+  get seasonName(){ return ["Spring","Summer","Autumn","Winter"][this.season]; }
+  get seasonIcon(){ return ["🌱","☀️","🍂","❄️"][this.season]; }
+  get seasonFactor(){ return [1.15,1.3,0.9,0.55][this.season]; } // food-growth modifier
+
+  setSpeed(s){ this.speed=s; this.game.ui.syncControls(); }
+  togglePause(){ this.paused=!this.paused; this.game.ui.syncControls(); }
+
+  /* Schedule a callback to fire after `delay` ticks. */
+  schedule(delay,fn){ this.queue.push({at:this.ticks+delay,fn}); }
+
+  /* Called each animation frame with real delta-time in seconds. */
+  advance(dt){
+    if(this.paused) return 0;
+    this.acc += dt * CONFIG.BASE_TPS * this.speed;
+    let steps=0;
+    // Guard against spiral-of-death after a tab was backgrounded.
+    while(this.acc>=1 && steps<6){ this.acc-=1; this.tick(); steps++; }
+    return steps;
+  }
+
+  /* One discrete simulation step: advance every subsystem. */
+  tick(){
+    this.ticks++;
+    const prevYear=(this.ticks-1)/CONFIG.TICKS_PER_YEAR|0;
+    // process due scheduled events
+    if(this.queue.length){
+      const due=this.queue.filter(e=>e.at<=this.ticks);
+      if(due.length){
+        this.queue=this.queue.filter(e=>e.at>this.ticks);
+        due.forEach(e=>e.fn());
+      }
+    }
+    // seasons rotate 4 times a year
+    const seasonNow = Math.floor((this.ticks % CONFIG.TICKS_PER_YEAR)/(CONFIG.TICKS_PER_YEAR/4));
+    if(seasonNow!==this.season){ this.season=seasonNow; this.game.onSeasonChange(); }
+
+    // subsystem updates
+    this.game.world_tick();
+    this.game.entities.tick();
+    this.game.settlements.tick();
+    this.game.disasters.tick();
+
+    // yearly bookkeeping (new year rollover)
+    if(this.year!==prevYear) this.game.onNewYear();
+
+    // random world events
+    if(--this.randomEventCd<=0){
+      this.randomEventCd=rint(Math.random,16,30);
+      this.game.fireRandomEvent();
+    }
+  }
+}
+
+/* ==========================================================================
+   9.  ENTITY MANAGER  —  spawning + all creature AI
+   ========================================================================== */
+class EntityManager{
+  constructor(game){ this.game=game; this.list=[]; this.grid=null; this.rebuildGrid(); }
+
+  rebuildGrid(){ // spatial hash for neighbour queries (cell = 1 tile)
+    this.grid=new Map();
+  }
+  _key(x,y){ return ((x|0))*10007 + (y|0); }
+  _index(){
+    this.grid.clear();
+    for(const e of this.list){
+      const k=this._key(e.x,e.y);
+      let b=this.grid.get(k); if(!b){b=[];this.grid.set(k,b);} b.push(e);
+    }
+  }
+  near(x,y,r){
+    const out=[];
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const b=this.grid.get(this._key(x+dx,y+dy)); if(b)for(const e of b)out.push(e);
+    }
+    return out;
+  }
+
+  spawn(race,x,y){
+    if(this.list.length>=CONFIG.MAX_ENTITIES) return null;
+    const t=this.game.world.get(x|0,y|0);
+    if(!t) return null;
+    const e=new Entity(race,x+0.5,y+0.5);
+    this.list.push(e);
+    return e;
+  }
+  remove(e){
+    const i=this.list.indexOf(e);
+    if(i>=0)this.list.splice(i,1);
+    if(e.settlement){
+      const s=e.settlement;
+      const j=s.members.indexOf(e); if(j>=0)s.members.splice(j,1);
+      if(s.leader===e) s.leader=null;
+    }
+  }
+
+  count(race){ let c=0; for(const e of this.list) if(e.race===race)c++; return c; }
+
+  /* --- discrete AI decisions, run once per simulation tick --------------- */
+  tick(){
+    this._index();
+    const w=this.game.world;
+    for(let i=this.list.length-1;i>=0;i--){
+      const e=this.list[i];
+      // --- vitals ---
+      e.age += 1/CONFIG.TICKS_PER_YEAR * 4;   // ~4 tick-years per game-year feel
+      e.legendYears += 1/CONFIG.TICKS_PER_YEAR;
+      const tile=w.get(e.x|0,e.y|0);
+      const foodShort = e.settlement ? e.settlement.res.food<=0 : true;
+      e.hunger += (e.settlement? (foodShort?4:-6) : 2.2);
+      if(this.game.sim.season===3) e.hunger += 0.6; // winter bites
+      e.hunger = clamp(e.hunger,0,120);
+      if(e.hunger>=100) e.hp -= 4;                    // starving
+      if(tile){
+        if(tile.biome===BIOME.LAVA) e.hp -= 40;
+        if(tile.burn>0.3) e.hp -= 6;
+        if(tile.acid>0 && (e.race===RACE.HUMAN||e.race===RACE.ORC)) e.hp -= 1;
+      }
+      if(e.cooldown>0)e.cooldown--;
+
+      // --- death ---
+      if(e.hp<=0 || e.age>=e.maxAge){
+        this._onDeath(e); this.list.splice(i,1); continue;
+      }
+
+      // --- race behaviour ---
+      switch(e.race){
+        case RACE.HUMAN: this._civilAI(e,true); break;
+        case RACE.ELF:   this._civilAI(e,false); break;
+        case RACE.ORC:   this._orcAI(e); break;
+        case RACE.MONSTER:this._monsterAI(e); break;
+      }
+    }
+  }
+
+  _onDeath(e){
+    const s=e.settlement;
+    if(e.isLeader && s && !s.destroyed){
+      this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.dynasty} mourns.`,"death");
+      s.leader=null; // succession handled in settlement tick
+    } else if(e.legendYears>60){
+      this.game.chronicle.log(`⚰️ The legendary ${e.name} died at ${Math.floor(e.age)} after ${Math.floor(e.legendYears)} years of wandering.`,"death");
+    }
+    if(s){
+      const j=s.members.indexOf(e); if(j>=0)s.members.splice(j,1);
+    }
+    // corpse -> nothing; occasionally leaves the tile as it was
+  }
+
+  /* Humans & Elves: gather, farm, build, reproduce, settle. */
+  _civilAI(e,isHuman){
+    const w=this.game.world;
+    // Homeless civilian -> try to join or found a settlement.
+    if(!e.settlement){
+      this._seekOrFoundSettlement(e,isHuman);
+      this._stepToward(e);
+      return;
+    }
+    const s=e.settlement;
+    if(s.destroyed){ e.settlement=null; e.job="idle"; return; }
+
+    // Flee from nearby threats.
+    const threat=this._nearestThreat(e,4);
+    if(threat){ e.state="flee"; this._fleeFrom(e,threat); this._stepToward(e); return; }
+
+    // Assign a job when idle or target reached.
+    const reached = Math.abs(e.x-e.tx-0.5)<0.6 && Math.abs(e.y-e.ty-0.5)<0.6;
+    if(e.job==="idle" || reached){
+      this._assignJob(e,isHuman);
+    }
+    this._performJob(e,isHuman);
+    this._stepToward(e);
+  }
+
+  _seekOrFoundSettlement(e,isHuman){
+    const w=this.game.world;
+    // Look for an existing friendly settlement to join.
+    let best=null,bd=1e9;
+    for(const s of this.game.settlements.list){
+      if(s.destroyed)continue;
+      if(isHuman && s.race!==RACE.HUMAN) continue;
+      if(!isHuman && s.race!==RACE.ELF) continue;
+      if(s.pop>=s.capacity+2) continue;
+      const d=dist2(e.x,e.y,s.cx,s.cy);
+      if(d<bd){bd=d;best=s;}
+    }
+    if(best && bd<26*26){
+      this.game.settlements.addMember(best,e);
+      e.tx=best.cx; e.ty=best.cy;
+      return;
+    }
+    // Otherwise wander; if on good ground and lucky, found a new settlement.
+    const tile=w.get(e.x|0,e.y|0);
+    const goodGround = tile && tile.walkable && tile.fertility>0.4 &&
+        tile.structure===STRUCT.NONE && (tile.biome===BIOME.GRASS||tile.biome===BIOME.FERTILE||tile.biome===BIOME.FOREST_FLOOR||tile.biome===BIOME.DIRT);
+    if(goodGround && e.cooldown<=0 && Math.random()<0.05 && e.age>1){
+      this.game.settlements.found(e,isHuman?RACE.HUMAN:RACE.ELF);
+      return;
+    }
+    this._wander(e,6);
+  }
+
+  _assignJob(e,isHuman){
+    const s=e.settlement, w=this.game.world;
+    const need = {
+      food: s.res.food < s.pop*3,
+      wood: s.res.wood < 20 + s.houses*4,
+      stone:s.res.stone < 12 + s.mines*3,
+    };
+    // Elves are efficient foresters and prefer planting/wood; humans balance.
+    let job;
+    if(need.food && (isHuman? true : Math.random()<0.6)) job="food";
+    else if(need.wood) job="wood";
+    else if(need.stone && this._hasWasteland(s)) job="stone";
+    else if(!isHuman && Math.random()<0.4) job="plant";       // elves reforest
+    else job="wander";
+
+    e.job=job;
+    // Pick a target tile appropriate to the job.
+    if(job==="food"){
+      const farm=this._findTile(s,t=>t.structure===STRUCT.FARM);
+      if(farm){ e.tx=farm.x; e.ty=farm.y; }
+      else{ const b=this._findTile(s,t=>t.resource===RES.BUSH||t.resource===RES.FLOWER,10); if(b){e.tx=b.x;e.ty=b.y;} else this._wander(e,4); }
+    } else if(job==="wood"){
+      const tr=this._findTile(s,t=>t.resource===RES.TREE||t.resource===RES.PINE,14);
+      if(tr){ e.tx=tr.x; e.ty=tr.y; } else this._wander(e,5);
+    } else if(job==="stone"){
+      const mn=this._findTile(s,t=>t.structure===STRUCT.MINE);
+      if(mn){e.tx=mn.x;e.ty=mn.y;}
+      else{ const rk=this._findTile(s,t=>t.resource===RES.STONE||t.biome===BIOME.ROCK,16); if(rk){e.tx=rk.x;e.ty=rk.y;} else this._wander(e,5); }
+    } else if(job==="plant"){
+      const spot=this._findTile(s,t=>t.walkable&&t.resource===RES.NONE&&t.fertility>0.4&&(t.biome===BIOME.GRASS||t.biome===BIOME.FOREST_FLOOR),8);
+      if(spot){e.tx=spot.x;e.ty=spot.y;} else this._wander(e,4);
+    } else {
+      this._wander(e,5);
+    }
+  }
+
+  _performJob(e,isHuman){
+    const s=e.settlement, w=this.game.world;
+    const tx=e.tx|0, ty=e.ty|0;
+    const reached = Math.abs(e.x-(tx+0.5))<0.55 && Math.abs(e.y-(ty+0.5))<0.55;
+    if(!reached) return;
+    const t=w.get(tx,ty); if(!t){ e.job="idle"; return; }
+    const eff = isHuman?1:(e.race===RACE.ELF?1.35:1); // elves gather efficiently
+
+    if(e.job==="wood"){
+      if(t.resource===RES.TREE||t.resource===RES.PINE){
+        t.health-=26*eff;
+        if(t.health<=0){ t.resource=RES.NONE; w.dirty=true; }
+        s.res.wood+=2*eff;
+        this.game.effects.spawn("chip",tx+0.5,ty+0.5,"#c9a06a");
+      }
+      e.job="idle";
+    } else if(e.job==="stone"){
+      if(t.structure===STRUCT.MINE){ s.res.stone+=2; }
+      else if(t.resource===RES.STONE||t.biome===BIOME.ROCK){
+        s.res.stone+=1.5;
+        if(t.resource===RES.STONE && Math.random()<0.2){ t.resource=RES.NONE; w.dirty=true; }
+      }
+      e.job="idle";
+    } else if(e.job==="food"){
+      if(t.structure===STRUCT.FARM){ s.res.food+=3*this.game.sim.seasonFactor; t.growth=Math.min(1,t.growth+0.5); }
+      else if(t.resource===RES.BUSH||t.resource===RES.FLOWER){ s.res.food+=1.5; if(Math.random()<0.3){t.resource=RES.NONE;w.dirty=true;} }
+      e.hunger=clamp(e.hunger-40,0,120);
+      e.job="idle";
+    } else if(e.job==="plant"){
+      if(t.walkable && t.resource===RES.NONE && t.structure===STRUCT.NONE){
+        t.resource = Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=40; w.dirty=true;
+        this.game.effects.spawn("chip",tx+0.5,ty+0.5,"#7ed957");
+      }
+      e.job="idle";
+    } else {
+      e.job="idle";
+    }
+  }
+
+  /* --- Orc AI: hunt settlements, smash structures, kill civilians -------- */
+  _orcAI(e){
+    const w=this.game.world;
+    // Target nearest civilian or structure.
+    const prey=this._nearestCivil(e,7);
+    if(prey){
+      e.tx=prey.x|0; e.ty=prey.y|0;
+      if(dist2(e.x,e.y,prey.x,prey.y)<0.9 && e.cooldown<=0){
+        prey.hp-=34; e.cooldown=2;
+        this.game.effects.spawn("hit",prey.x,prey.y,"#ff5c5c");
+        if(prey.hp<=0 && prey.isLeader) this.game.chronicle.log(`⚔️ Orcs slew ${prey.name} of ${prey.settlement?prey.settlement.name:'the wild'}!`,"war");
+      }
+    } else {
+      // Smash nearby structures.
+      const st=this._nearestStructure(e,6);
+      if(st){
+        e.tx=st.x; e.ty=st.y;
+        if(dist2(e.x,e.y,st.x+0.5,st.y+0.5)<1.1 && e.cooldown<=0){
+          const tile=w.get(st.x,st.y); tile.health-=30; e.cooldown=2;
+          this.game.effects.spawn("hit",st.x+0.5,st.y+0.5,"#ff9f4f");
+          if(tile.health<=0){ this.game.settlements.destroyStructure(st.x,st.y); }
+        }
+      } else this._wander(e,7);
+    }
+    this._stepToward(e);
+  }
+
+  /* --- Monster AI: chaotic roaming, attacks anything ---------------------- */
+  _monsterAI(e){
+    const victim=this._nearestAnyEnemy(e,6);
+    if(victim){
+      e.tx=victim.x|0; e.ty=victim.y|0;
+      if(dist2(e.x,e.y,victim.x,victim.y)<1.0 && e.cooldown<=0){
+        victim.hp-=28; e.cooldown=3;
+        this.game.effects.spawn("hit",victim.x,victim.y,"#c95fff");
+      }
+    } else this._wander(e,9);
+    this._stepToward(e);
+  }
+
+  /* --- movement helpers -------------------------------------------------- */
+  _wander(e,r){
+    if(e.wanderCd>0){ e.wanderCd--; return; }
+    const w=this.game.world;
+    for(let a=0;a<6;a++){
+      const nx=clamp((e.x|0)+rint(Math.random,-r,r),0,w.w-1);
+      const ny=clamp((e.y|0)+rint(Math.random,-r,r),0,w.h-1);
+      const t=w.get(nx,ny);
+      if(t && t.walkable){ e.tx=nx; e.ty=ny; e.wanderCd=rint(Math.random,1,3); return; }
+    }
+  }
+  _fleeFrom(e,threat){
+    const w=this.game.world;
+    const dx=Math.sign(e.x-threat.x)||1, dy=Math.sign(e.y-threat.y)||1;
+    const nx=clamp((e.x|0)+dx*3,0,w.w-1), ny=clamp((e.y|0)+dy*3,0,w.h-1);
+    const t=w.get(nx,ny);
+    if(t&&t.walkable){e.tx=nx;e.ty=ny;} else this._wander(e,3);
+  }
+  /* Continuous movement toward the current target, called every tick;
+     the renderer interpolates between ticks for smoothness. */
+  _stepToward(e){
+    const w=this.game.world;
+    const gx=e.tx+0.5, gy=e.ty+0.5;
+    const dx=gx-e.x, dy=gy-e.y;
+    const d=Math.hypot(dx,dy);
+    const step=(e.speed*0.9)/CONFIG.BASE_TPS; // tiles per tick baseline
+    if(d<=step){ e.x=gx; e.y=gy; return; }
+    let nx=e.x+dx/d*step, ny=e.y+dy/d*step;
+    const t=w.get(nx|0,ny|0);
+    if(t && (t.walkable || e.race===RACE.MONSTER)){ e.x=nx; e.y=ny; }
+    else { this._wander(e,2); }
+  }
+
+  /* --- spatial queries --------------------------------------------------- */
+  _nearestThreat(e,r){
+    let best=null,bd=r*r;
+    for(const o of this.near(e.x,e.y,r)){
+      if(o.race===RACE.ORC||o.race===RACE.MONSTER){
+        const d=dist2(e.x,e.y,o.x,o.y); if(d<bd){bd=d;best=o;}
+      }
+    }
+    return best;
+  }
+  _nearestCivil(e,r){
+    let best=null,bd=r*r;
+    for(const o of this.near(e.x,e.y,r)){
+      if((o.race===RACE.HUMAN||o.race===RACE.ELF)){
+        const d=dist2(e.x,e.y,o.x,o.y); if(d<bd){bd=d;best=o;}
+      }
+    }
+    return best;
+  }
+  _nearestAnyEnemy(e,r){
+    let best=null,bd=r*r;
+    for(const o of this.near(e.x,e.y,r)){
+      if(o!==e && o.race!==RACE.MONSTER){
+        const d=dist2(e.x,e.y,o.x,o.y); if(d<bd){bd=d;best=o;}
+      }
+    }
+    return best;
+  }
+  _nearestStructure(e,r){
+    const w=this.game.world; let best=null,bd=r*r;
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const x=(e.x|0)+dx,y=(e.y|0)+dy; const t=w.get(x,y);
+      if(t && t.structure!==STRUCT.NONE && t.structure!==STRUCT.ROAD && t.structure!==STRUCT.RUIN){
+        const d=dx*dx+dy*dy; if(d<bd){bd=d;best={x,y};}
+      }
+    }
+    return best;
+  }
+  _findTile(s,pred,r=12){
+    const w=this.game.world;
+    for(let ring=1;ring<=r;ring++){
+      for(let a=0;a<ring*8;a++){
+        const ang=a/(ring*8)*Math.PI*2;
+        const x=Math.round(s.cx+Math.cos(ang)*ring), y=Math.round(s.cy+Math.sin(ang)*ring);
+        const t=w.get(x,y); if(t&&pred(t)) return {x,y};
+      }
+    }
+    return null;
+  }
+  _hasWasteland(s){ return s.cx < this.game.world.w*0.55; }
+}
+
+/* ==========================================================================
+   10.  SETTLEMENT MANAGER  —  economy, building, diplomacy, dynasties
+   ========================================================================== */
+class SettlementManager{
+  constructor(game){ this.game=game; this.list=[]; }
+
+  found(founderEntity,race){
+    const w=this.game.world, x=founderEntity.x|0, y=founderEntity.y|0;
+    const t=w.get(x,y); if(!t||!t.walkable) return null;
+    const s=new Settlement(race,x,y,this.game.sim.year);
+    // town hall at the centre
+    t.structure=STRUCT.TOWNHALL; t.health=200; t.owner=s.id; w.dirty=true;
+    s.territory.add(y*w.w+x);
+    this.claimAround(s,x,y,2);
+    this.list.push(s);
+    // founder becomes the first leader & member
+    this.addMember(s,founderEntity);
+    founderEntity.isLeader=true; s.leader=founderEntity;
+    founderEntity.name=rulerName();
+    this.game.chronicle.log(`🏛️ ${founderEntity.name} founded <b>${s.name}</b>, seat of the ${s.kingdom}.`,"found");
+    this.game.chronicle.achieve("first_settlement","🏛️","First Light","A civilization takes root in the world.");
+    if(this.list.filter(z=>!z.destroyed).length>=5)
+      this.game.chronicle.achieve("five_realms","🗺️","An Age of Kingdoms","Five settlements stand at once.");
+    return s;
+  }
+
+  addMember(s,e){
+    if(e.settlement===s)return;
+    if(e.settlement){ const j=e.settlement.members.indexOf(e); if(j>=0)e.settlement.members.splice(j,1); }
+    e.settlement=s; e.race = s.race; // conform race identity to realm
+    e.dynasty=s.dynasty; e.job="idle";
+    s.members.push(e);
+  }
+
+  claimAround(s,x,y,r){
+    const w=this.game.world;
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const nx=x+dx,ny=y+dy; const t=w.get(nx,ny);
+      if(t && t.walkable && (t.owner===-1)){ t.owner=s.id; s.territory.add(ny*w.w+nx); }
+    }
+  }
+
+  destroyStructure(x,y){
+    const w=this.game.world, t=w.get(x,y); if(!t)return;
+    const was=t.structure;
+    t.structure = was===STRUCT.TOWNHALL?STRUCT.RUIN:STRUCT.NONE;
+    if(was===STRUCT.RUIN) t.structure=STRUCT.NONE;
+    t.health=100; w.dirty=true;
+    // recount for the owning settlement
+    const s=this.list.find(z=>z.id===t.owner);
+    if(s) this._recount(s);
+  }
+
+  _recount(s){
+    const w=this.game.world; let h=0,f=0,m=0,hall=false;
+    for(const idx of s.territory){
+      const st=w.tiles[idx].structure;
+      if(st===STRUCT.HOUSE)h++; else if(st===STRUCT.FARM)f++; else if(st===STRUCT.MINE)m++;
+      else if(st===STRUCT.TOWNHALL)hall=true;
+    }
+    s.houses=h; s.farms=f; s.mines=m;
+    if(!hall && !s.destroyed) this._collapse(s);
+  }
+
+  _collapse(s){
+    s.destroyed=true;
+    this.game.chronicle.log(`💀 <b>${s.name}</b> has fallen. The ${s.kingdom} is no more.`,"war");
+    this.game.chronicle.achieve("first_fall","💀","Ozymandias","A kingdom crumbles into ruin.");
+    // survivors become nomads who may migrate
+    for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.job="idle"; }
+    s.members.length=0;
+    // release territory
+    const w=this.game.world;
+    for(const idx of s.territory){ if(w.tiles[idx].owner===s.id) w.tiles[idx].owner=-1; }
+  }
+
+  /* Per-tick settlement logic: consume/produce, build, grow, govern. */
+  tick(){
+    const sim=this.game.sim, w=this.game.world;
+    for(const s of this.list){
+      if(s.destroyed) continue;
+
+      // -- succession: appoint a new leader if the throne is empty --
+      if(!s.leader && s.members.length){
+        // eldest becomes ruler -> new dynasty chapter
+        let eldest=s.members[0];
+        for(const m of s.members) if(m.age>eldest.age) eldest=m;
+        eldest.isLeader=true; eldest.name=rulerName(); s.leader=eldest;
+        s.dynasty=eldest.name.split(" ")[0]+" Dynasty";
+        this.game.chronicle.log(`👑 ${eldest.name} crowned ruler of ${s.name}. A new dynasty begins.`,"found");
+      }
+
+      // -- economy: passive production from land + structures --
+      const season=sim.seasonFactor;
+      s.res.food += s.farms*0.6*season + (s.race===RACE.ELF?0.3:0.15);
+      s.res.wood += (s.race===RACE.ELF?0.5:0.25);
+      s.res.stone+= s.mines*0.4;
+      // consumption
+      s.res.food -= s.pop*0.5;
+      // happiness responds to surplus, crowding, war
+      const fed = s.res.food>0;
+      let hTarget = 55 + (fed?20:-40) + (s.pop<s.capacity?10:-15) - s.wars*3;
+      s.happiness += (clamp(hTarget,0,100)-s.happiness)*0.05;
+      s.happiness = clamp(s.happiness,0,100);
+      s.res.food=clamp(s.res.food,0,9999);
+      s.res.wood=clamp(s.res.wood,0,9999);
+      s.res.stone=clamp(s.res.stone,0,9999);
+
+      // -- starvation deaths --
+      if(s.res.food<=0 && Math.random()<0.25 && s.pop>0){
+        const victim=choice(Math.random,s.members);
+        victim.hp-=10;
+        if(s.pop<=2 && Math.random()<0.4)
+          this.game.chronicle.log(`🥀 Famine grips ${s.name}; its people grow desperate.`,"death");
+      }
+
+      // -- construction --
+      if(s.buildCd>0) s.buildCd--; else this._tryBuild(s);
+
+      // -- reproduction / population growth --
+      if(s.res.food> s.pop*4 && s.pop<s.capacity && s.happiness>45 && Math.random()<0.2){
+        this._birth(s);
+      }
+
+      // -- territory / roads / trade cadence --
+      if(--s.tradeCd<=0){ s.tradeCd=rint(Math.random,24,44); this._diplomacyAndTrade(s); }
+
+      // -- level up milestones --
+      this._checkGrowth(s);
+      if(s.pop>s.peakPop) s.peakPop=s.pop;
+    }
+    // purge fully-empty destroyed settlements from lists occasionally
+    if(sim.ticks%50===0) this.list=this.list.filter(s=>!(s.destroyed && s.pop===0)|| s.leader);
+  }
+
+  _birth(s){
+    if(this.game.entities.list.length>=CONFIG.MAX_ENTITIES) return;
+    const w=this.game.world;
+    const baby=this.game.entities.spawn(s.race,s.cx+ (Math.random()*2-1), s.cy+(Math.random()*2-1));
+    if(!baby)return;
+    baby.age=0; baby.hunger=0;
+    this.addMember(s,baby);
+    s.res.food-=3;
+    if(s.pop>=10 && Math.random()<0.3)
+      this.game.chronicle.log(`👶 A child, ${baby.name}, is born in ${s.name}.`,"birth");
+  }
+
+  _tryBuild(s){
+    const w=this.game.world;
+    const wantHouse = s.pop >= s.capacity-1 && s.res.wood>=15;
+    const wantFarm  = s.res.food < s.pop*4 && s.farms < 3+Math.floor(s.pop/6) && s.res.wood>=8;
+    const wantMine  = s.mines<1 && s.res.stone<20 && this._nearRock(s) && s.res.wood>=10;
+    let build=null;
+    if(wantHouse) build=STRUCT.HOUSE;
+    else if(wantFarm) build=STRUCT.FARM;
+    else if(wantMine) build=STRUCT.MINE;
+    else if(s.res.wood>40 && Math.random()<0.3) build=STRUCT.HOUSE; // surplus expansion
+    if(!build) return;
+
+    const spot=this._buildSpot(s,build);
+    if(!spot) return;
+    const t=w.get(spot.x,spot.y);
+    // pay costs
+    if(build===STRUCT.HOUSE){ s.res.wood-=15; s.res.stone-=4; }
+    else if(build===STRUCT.FARM){ s.res.wood-=8; t.fertility=Math.max(t.fertility,0.7); }
+    else if(build===STRUCT.MINE){ s.res.wood-=10; }
+    t.structure=build; t.health=120; t.owner=s.id; t.resource=RES.NONE;
+    s.territory.add(spot.y*w.w+spot.x);
+    this.claimAround(s,spot.x,spot.y,1);
+    this._recount(s);
+    this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
+    s.buildCd=rint(Math.random,3,7);
+    w.dirty=true;
+  }
+
+  _buildSpot(s,build){
+    const w=this.game.world;
+    // farms like fertile ground; mines like rock/wasteland; houses near hall
+    for(let ring=1;ring<=6;ring++){
+      const cand=[];
+      for(let a=0;a<ring*8;a++){
+        const ang=a/(ring*8)*Math.PI*2;
+        const x=Math.round(s.cx+Math.cos(ang)*ring), y=Math.round(s.cy+Math.sin(ang)*ring);
+        const t=w.get(x,y);
+        if(!t||!t.walkable||t.structure!==STRUCT.NONE) continue;
+        if(build===STRUCT.MINE && !(t.biome===BIOME.ROCK||t.resource===RES.STONE)) continue;
+        if(build===STRUCT.FARM && t.fertility<0.35) continue;
+        cand.push({x,y,t});
+      }
+      if(cand.length){ const c=choice(Math.random,cand); return {x:c.x,y:c.y}; }
+    }
+    return null;
+  }
+
+  _nearRock(s){
+    const w=this.game.world;
+    for(let dy=-8;dy<=8;dy++)for(let dx=-8;dx<=8;dx++){
+      const t=w.get(s.cx+dx,s.cy+dy);
+      if(t&&(t.biome===BIOME.ROCK||t.resource===RES.STONE)) return true;
+    }
+    return false;
+  }
+
+  _checkGrowth(s){
+    const key=`lvl${s.id}`;
+    if(s.pop>=45) this.game.chronicle.achieve("kingdom_"+s.id,"👑",`The ${s.kingdom} Ascends`,`${s.name} has grown into a mighty kingdom.`);
+    if(s.pop>=16 && s.level<3){ s.level=3; this.game.chronicle.log(`🏘️ ${s.name} has grown into a bustling town.`,"found"); }
+    else if(s.pop>=7 && s.level<2){ s.level=2; }
+  }
+
+  /* Diplomacy + trade + roads between nearby settlements. */
+  _diplomacyAndTrade(s){
+    const w=this.game.world;
+    for(const o of this.list){
+      if(o===s||o.destroyed) continue;
+      const d=Math.sqrt(dist2(s.cx,s.cy,o.cx,o.cy));
+      if(d>34) continue;
+      const key=Math.min(s.id,o.id)+"_"+Math.max(s.id,o.id);
+      if(s.relations[o.id]===undefined) s.relations[o.id]=0;
+      if(o.relations[s.id]===undefined) o.relations[s.id]=0;
+
+      if(s.race===o.race){
+        // friendly: build a road + trade surplus
+        s.relations[o.id]=clamp(s.relations[o.id]+2,-100,100);
+        this._buildRoad(s,o);
+        // move surplus food/wood along the trade route
+        if(s.res.food>o.res.food+20){
+          const amt=Math.min(10,(s.res.food-o.res.food)/2);
+          s.res.food-=amt; o.res.food+=amt;
+          if(Math.random()<0.25) this.game.chronicle.log(`🐎 Trade caravans carry grain from ${s.name} to ${o.name}.`,"trade");
+          this.game.chronicle.achieve("first_trade","🐎","Merchant Roads","Two realms open a trade route.");
+        }
+      } else {
+        // rival races may drift toward war
+        s.relations[o.id]=clamp(s.relations[o.id]-3,-100,100);
+        if(s.relations[o.id]<-40 && Math.random()<0.15 && s.pop>4){
+          this._declareWar(s,o);
+        }
+      }
+    }
+  }
+
+  _declareWar(s,o){
+    s.wars++; o.wars++;
+    this.game.chronicle.log(`⚔️ ${s.kingdom} declares war upon ${o.kingdom}!`,"war");
+    // send a couple of raiders (spawn temporary aggressive members near o)
+    const raiders=Math.min(3,Math.floor(s.pop/4));
+    for(let i=0;i<raiders;i++){
+      const e=this.game.entities.spawn(s.race, o.cx+rint(Math.random,-2,2), o.cy+rint(Math.random,-2,2));
+      if(e){ e.settlement=null; e.state="raid"; e.hp=120; e.tx=o.cx; e.ty=o.cy; e.job="idle";
+             // reuse orc-like aggression by flagging
+             e._raider=o; }
+    }
+    this.game.chronicle.achieve("first_war","⚔️","The Dogs of War","War erupts between two kingdoms.");
+  }
+
+  _buildRoad(a,b){
+    const w=this.game.world;
+    // Bresenham line of road tiles connecting town centres (skip water).
+    let x0=a.cx,y0=a.cy,x1=b.cx,y1=b.cy;
+    const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0);
+    const sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx-dy;
+    let guard=0;
+    while(guard++<200){
+      const t=w.get(x0,y0);
+      if(t && t.walkable && t.structure===STRUCT.NONE && t.resource!==RES.TREE){
+        t.structure=STRUCT.ROAD; t.health=200; w.dirty=true;
+      }
+      if(x0===x1&&y0===y1)break;
+      const e2=2*err;
+      if(e2>-dy){err-=dy;x0+=sx;}
+      if(e2<dx){err+=dx;y0+=sy;}
+    }
+  }
+
+  activeCount(){ return this.list.filter(s=>!s.destroyed).length; }
+}
+
+/* ==========================================================================
+   11.  DISASTER MANAGER  —  god-tier destruction, all animated
+   ========================================================================== */
+class DisasterManager{
+  constructor(game){ this.game=game; this.fires=[]; this.acid=[]; }
+
+  lightning(x,y){
+    const w=this.game.world, t=w.get(x,y); if(!t)return;
+    this.game.effects.spawn("lightning",x+0.5,y+0.5,"#bfe9ff");
+    // damage entities & structure at strike
+    for(const e of this.game.entities.near(x,y,1)) e.hp-=70;
+    if(t.structure!==STRUCT.NONE){ t.health-=80; if(t.health<=0)this.game.settlements.destroyStructure(x,y); }
+    if(t.resource===RES.TREE||t.resource===RES.PINE){ this.startFire(x,y); }
+    this.game.chronicle.log(`⚡ A bolt of lightning splits the sky over (${x},${y}).`,"disaster");
+  }
+
+  startFire(x,y){
+    const t=this.game.world.get(x,y); if(!t||t.burn>0)return;
+    if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER)return;
+    t.burn=1; this.fires.push({x,y}); this.game.world.dirty=true;
+  }
+
+  fireBurst(x,y){
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++) this.startFire(x+dx,y+dy);
+    this.game.chronicle.log(`🔥 Flames erupt in the wilds near (${x},${y}).`,"disaster");
+  }
+
+  acidRain(x,y,r){
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const t=this.game.world.get(x+dx,y+dy); if(!t)continue;
+      if(dx*dx+dy*dy>r*r)continue;
+      t.acid=6;
+      this.acid.push({x:x+dx,y:y+dy});
+    }
+    this.game.effects.spawn("acid",x+0.5,y+0.5,"#9ecb3a",r);
+    this.game.chronicle.log(`☣️ Acid rain falls, withering the land around (${x},${y}).`,"disaster");
+  }
+
+  meteor(x,y){
+    this.game.effects.spawn("meteor",x+0.5,y+0.5,"#ff7a3c");
+    const r=rint(Math.random,2,3);
+    this.game.sim.schedule(1,()=>{
+      this.game.world.carveCrater(x,y,r,Math.random()<0.5);
+      this.game.camera.shake(10);
+      for(const e of this.game.entities.near(x,y,r+1)) e.hp-=200;
+      for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+        if(dx*dx+dy*dy<=r*r) this.game.settlements.destroyStructure(x+dx,y+dy);
+      }
+      this.game.effects.spawn("explosion",x+0.5,y+0.5,"#ffcf5c",r+1);
+    });
+    this.game.chronicle.log(`☄️ A meteor streaks down and reshapes the earth at (${x},${y})!`,"disaster");
+    this.game.chronicle.achieve("meteor","☄️","Impact Event","A meteor permanently scars the world.");
+  }
+
+  earthquake(x,y){
+    const r=4;
+    this.game.camera.shake(16);
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      const t=this.game.world.get(x+dx,y+dy); if(!t)continue;
+      if(dx*dx+dy*dy>r*r)continue;
+      if(t.structure!==STRUCT.NONE && t.structure!==STRUCT.ROAD){
+        t.health-=60; if(t.health<=0)this.game.settlements.destroyStructure(x+dx,y+dy);
+      }
+      if(Math.random()<0.06 && t.biome===BIOME.ROCK){ t.biome=BIOME.CRATER; }
+    }
+    for(const e of this.game.entities.near(x,y,r)) e.hp-=20;
+    this.game.effects.spawn("quake",x+0.5,y+0.5,"#8a7a5a",r);
+    this.game.world.dirty=true;
+    this.game.chronicle.log(`🌋 The ground heaves — an earthquake rocks the region!`,"disaster");
+  }
+
+  volcano(x,y){
+    // erupt: lava core + ash ring + fires around the rim
+    this.game.world.carveCrater(x,y,3,true);
+    this.game.camera.shake(12);
+    for(let a=0;a<10;a++){
+      const ang=Math.random()*Math.PI*2, rr=3+Math.random()*2;
+      const fx=Math.round(x+Math.cos(ang)*rr), fy=Math.round(y+Math.sin(ang)*rr);
+      this.startFire(fx,fy);
+    }
+    this.game.effects.spawn("explosion",x+0.5,y+0.5,"#ff7a3c",4);
+    for(const e of this.game.entities.near(x,y,3)) e.hp-=150;
+    this.game.chronicle.log(`🌋 A volcano roars to life, spewing lava across the land!`,"disaster");
+  }
+
+  /* advance active fires and acid each tick */
+  tick(){
+    const w=this.game.world;
+    // FIRE: burn tiles, spread, consume vegetation/structures
+    for(let i=this.fires.length-1;i>=0;i--){
+      const f=this.fires[i]; const t=w.get(f.x,f.y);
+      if(!t||t.burn<=0){ this.fires.splice(i,1); continue; }
+      t.burn-=0.08;
+      // damage occupants
+      for(const e of this.game.entities.near(f.x,f.y,0)) e.hp-=8;
+      if(t.structure!==STRUCT.NONE){ t.health-=12; if(t.health<=0)this.game.settlements.destroyStructure(f.x,f.y); }
+      // spread to flammable neighbours
+      if(Math.random()<0.28){
+        const nx=f.x+rint(Math.random,-1,1), ny=f.y+rint(Math.random,-1,1);
+        const nt=w.get(nx,ny);
+        if(nt && nt.burn<=0 && (nt.resource===RES.TREE||nt.resource===RES.PINE||nt.resource===RES.BUSH||nt.biome===BIOME.GRASS||nt.biome===BIOME.FOREST_FLOOR||nt.biome===BIOME.FERTILE))
+          this.startFire(nx,ny);
+      }
+      if(t.burn<=0){
+        // scorched earth
+        if(t.resource===RES.TREE||t.resource===RES.PINE||t.resource===RES.BUSH){t.resource=RES.NONE;}
+        t.biome = (t.biome===BIOME.FOREST_FLOOR||t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE)?BIOME.DIRT:t.biome;
+        t.fertility*=0.6; w.dirty=true;
+        this.fires.splice(i,1);
+      }
+    }
+    // ACID: wither vegetation, decay timer
+    for(let i=this.acid.length-1;i>=0;i--){
+      const a=this.acid[i]; const t=w.get(a.x,a.y);
+      if(!t||t.acid<=0){ this.acid.splice(i,1); continue; }
+      t.acid-=1;
+      if(t.resource===RES.TREE||t.resource===RES.FLOWER||t.resource===RES.BUSH||t.resource===RES.PINE){
+        t.health-=20; if(t.health<=0){ t.resource=RES.NONE; w.dirty=true; }
+      }
+      if(t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE){ if(Math.random()<0.1){t.biome=BIOME.DIRT;t.fertility*=0.7;w.dirty=true;} }
+      if(t.acid<=0)this.acid.splice(i,1);
+    }
+  }
+}
+
+/* ==========================================================================
+   12.  EFFECT MANAGER  —  transient particle / animation layer
+   ========================================================================== */
+class EffectManager{
+  constructor(game){ this.game=game; this.fx=[]; }
+  spawn(type,x,y,color,size=1){
+    this.fx.push({type,x,y,color,size,t:0,life:this._life(type),parts:this._parts(type,size)});
+  }
+  _life(type){
+    return {lightning:0.5,meteor:0.9,explosion:0.7,acid:1.4,quake:0.8,hit:0.3,chip:0.5,build:0.6}[type]||0.5;
+  }
+  _parts(type,size){
+    const arr=[];
+    if(type==="explosion"||type==="build"||type==="chip"){
+      const n=type==="explosion"?18*size:(type==="build"?10:5);
+      for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,sp=(0.4+Math.random())*(type==="explosion"?2:1);
+        arr.push({dx:Math.cos(a)*sp,dy:Math.sin(a)*sp,r:1+Math.random()*2});}
+    }
+    if(type==="acid"){
+      for(let i=0;i<26*size;i++)arr.push({dx:(Math.random()-0.5)*size*2,dy:(Math.random()-0.5)*size*2,r:0.5+Math.random(),ph:Math.random()});
+    }
+    return arr;
+  }
+  update(dt){
+    for(let i=this.fx.length-1;i>=0;i--){
+      const e=this.fx[i]; e.t+=dt;
+      if(e.t>=e.life)this.fx.splice(i,1);
+    }
+  }
+  clear(){ this.fx.length=0; }
+}
+
+/* ==========================================================================
+   13.  CAMERA  —  pan / zoom / screen-shake
+   ========================================================================== */
+class Camera{
+  constructor(game){
+    this.game=game;
+    this.x=0; this.y=0;             // world-pixel top-left
+    this.zoom=1;
+    this.minZoom=0.4; this.maxZoom=4;
+    this.shakeAmt=0;
+  }
+  shake(a){ this.shakeAmt=Math.max(this.shakeAmt,a); }
+  update(dt){ if(this.shakeAmt>0) this.shakeAmt=Math.max(0,this.shakeAmt-dt*40); }
+  worldPxW(){ return this.game.world.w*CONFIG.TILE; }
+  worldPxH(){ return this.game.world.h*CONFIG.TILE; }
+  clampCam(vw,vh){
+    const ww=this.worldPxW()*this.zoom, wh=this.worldPxH()*this.zoom;
+    // keep world roughly in view
+    this.x=clamp(this.x, -vw*0.3/this.zoom, this.worldPxW()-vw*0.7/this.zoom);
+    this.y=clamp(this.y, -vh*0.3/this.zoom, this.worldPxH()-vh*0.7/this.zoom);
+  }
+  screenToTile(sx,sy){
+    const wx=this.x + sx/this.zoom, wy=this.y + sy/this.zoom;
+    return {x:Math.floor(wx/CONFIG.TILE), y:Math.floor(wy/CONFIG.TILE)};
+  }
+  fit(vw,vh){
+    this.zoom=Math.min(vw/this.worldPxW(), vh/this.worldPxH())*0.98;
+    this.zoom=clamp(this.zoom,this.minZoom,this.maxZoom);
+    this.x=(this.worldPxW()-vw/this.zoom)/2;
+    this.y=(this.worldPxH()-vh/this.zoom)/2;
+  }
+}
+
+/* ==========================================================================
+   14.  RENDERER  —  draws terrain (cached), then dynamic layers each frame
+   ========================================================================== */
+class Renderer{
+  constructor(game,canvas){
+    this.game=game;
+    this.canvas=canvas;
+    this.ctx=canvas.getContext("2d");
+    // offscreen terrain cache (terrain + resources + structures)
+    this.terrain=document.createElement("canvas");
+    this.terrain.width=game.world.w*CONFIG.TILE;
+    this.terrain.height=game.world.h*CONFIG.TILE;
+    this.tctx=this.terrain.getContext("2d");
+    this.frame=0;
+  }
+  resize(){
+    const c=this.canvas, p=c.parentElement;
+    c.width=p.clientWidth; c.height=p.clientHeight;
+    this.ctx.imageSmoothingEnabled=false;
+  }
+
+  /* Redraw the entire terrain cache. Called only when world.dirty is set. */
+  drawTerrain(){
+    const w=this.game.world, T=CONFIG.TILE, ctx=this.tctx;
+    for(let y=0;y<w.h;y++){
+      for(let x=0;x<w.w;x++){
+        const t=w.tiles[y*w.w+x];
+        const px=x*T, py=y*T;
+        // base biome
+        const cols=BIOME_COL[t.biome];
+        ctx.fillStyle = ((x+y+t.variant)&1)?cols[0]:cols[1];
+        ctx.fillRect(px,py,T,T);
+        // territory tint (subtle)
+        if(t.owner>=0){
+          const s=this.game.settlements.list.find(z=>z.id===t.owner);
+          if(s && !s.destroyed){ ctx.fillStyle=this._alpha(s.color,0.12); ctx.fillRect(px,py,T,T); }
+        }
+        this._tileDetail(ctx,t,px,py,T,x,y);
+        // resources
+        if(t.resource) this._resource(ctx,t,px,py,T);
+        // structures
+        if(t.structure) this._structure(ctx,t,px,py,T);
+      }
+    }
+    w.dirty=false;
+  }
+
+  _alpha(hex,a){
+    const n=parseInt(hex.slice(1),16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+  }
+
+  _tileDetail(ctx,t,px,py,T,x,y){
+    // cheap pixel texture accents per biome
+    if(t.biome===BIOME.LAVA){
+      ctx.fillStyle="#ffb14a";
+      ctx.fillRect(px+((x*7)%T*0.5|0),py+((y*5)%T*0.5|0),2,2);
+    } else if(t.biome===BIOME.ROCK){
+      ctx.fillStyle="#5a5761"; ctx.fillRect(px+3,py+9,3,2); ctx.fillRect(px+9,py+4,2,2);
+    } else if(t.biome===BIOME.ASH){
+      ctx.fillStyle="#6b6570"; ctx.fillRect(px+5,py+6,2,2);
+    } else if(t.biome===BIOME.SNOW){
+      ctx.fillStyle="#ffffff"; ctx.fillRect(px+4,py+5,2,2); ctx.fillRect(px+10,py+9,1,1);
+    } else if(t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE||t.biome===BIOME.FOREST_FLOOR){
+      ctx.fillStyle=t.biome===BIOME.FERTILE?"#5aa544":"#5f9d47";
+      const gx=px+((x*3)%(T-3)), gy=py+((y*7)%(T-3));
+      ctx.fillRect(gx,gy+2,1,2); ctx.fillRect(gx+3,gy+1,1,3);
+    } else if(t.biome===BIOME.CRATER){
+      ctx.fillStyle="#413d47"; ctx.fillRect(px+6,py+6,3,3);
+    } else if(t.biome===BIOME.DIRT){
+      ctx.fillStyle="#5a4530"; ctx.fillRect(px+4,py+7,3,2);
+    } else if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER){
+      ctx.fillStyle=this._alpha("#bfe9ff",0.10);
+      ctx.fillRect(px+2,py+ (((x+y)&2)?4:9),T-6,1);
+    }
+  }
+
+  _resource(ctx,t,px,py,T){
+    const cx=px+T/2, cy=py+T/2;
+    switch(t.resource){
+      case RES.TREE:{
+        ctx.fillStyle="#5b3a1e"; ctx.fillRect(cx-1,cy+1,2,5);          // trunk
+        ctx.fillStyle="#2f6d2a"; ctx.beginPath(); ctx.arc(cx,cy-1,4.4,0,7); ctx.fill();
+        ctx.fillStyle="#3f8a35"; ctx.beginPath(); ctx.arc(cx-1.4,cy-2,2.6,0,7); ctx.fill();
+        break; }
+      case RES.PINE:{
+        ctx.fillStyle="#4a2f18"; ctx.fillRect(cx-1,cy+2,2,4);
+        ctx.fillStyle="#2a5f34";
+        ctx.beginPath(); ctx.moveTo(cx,cy-5); ctx.lineTo(cx-4,cy+2); ctx.lineTo(cx+4,cy+2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cx,cy-2); ctx.lineTo(cx-3,cy+4); ctx.lineTo(cx+3,cy+4); ctx.fill();
+        break; }
+      case RES.FLOWER:{
+        const cols=["#ff6f9c","#ffd94f","#c95fff","#ffffff"];
+        ctx.fillStyle=cols[(px+py)%cols.length];
+        ctx.fillRect(cx-1,cy-1,2,2); ctx.fillRect(cx-3,cy,1,1); ctx.fillRect(cx+2,cy,1,1);
+        ctx.fillRect(cx,cy-3,1,1); ctx.fillRect(cx,cy+2,1,1);
+        break; }
+      case RES.BUSH:{
+        ctx.fillStyle="#3f7a34"; ctx.beginPath(); ctx.arc(cx,cy+1,3,0,7); ctx.fill();
+        ctx.fillStyle="#c0304a"; ctx.fillRect(cx-1,cy,1,1); ctx.fillRect(cx+1,cy+1,1,1);
+        break; }
+      case RES.STONE:{
+        ctx.fillStyle="#8b8792"; ctx.beginPath(); ctx.arc(cx,cy+1,3.4,0,7); ctx.fill();
+        ctx.fillStyle="#6f6b78"; ctx.fillRect(cx-2,cy+1,2,2);
+        break; }
+    }
+  }
+
+  _structure(ctx,t,px,py,T){
+    const cx=px+T/2, cy=py+T/2;
+    switch(t.structure){
+      case STRUCT.ROAD:{
+        ctx.fillStyle="#8a7a5a"; ctx.fillRect(px+2,py+2,T-4,T-4);
+        ctx.fillStyle="#79694c"; ctx.fillRect(px+4,py+6,2,2); ctx.fillRect(px+9,py+4,2,2);
+        break; }
+      case STRUCT.HOUSE:{
+        ctx.fillStyle="#7a5230"; ctx.fillRect(px+3,py+7,T-6,T-9);      // walls
+        ctx.fillStyle="#c0392b"; ctx.beginPath();
+        ctx.moveTo(px+2,py+7); ctx.lineTo(cx,py+2); ctx.lineTo(px+T-2,py+7); ctx.fill(); // roof
+        ctx.fillStyle="#3a2415"; ctx.fillRect(cx-1,py+10,3,4);        // door
+        break; }
+      case STRUCT.FARM:{
+        ctx.fillStyle="#6b4a28"; ctx.fillRect(px+2,py+2,T-4,T-4);
+        ctx.fillStyle="#a9c24a";
+        for(let i=0;i<3;i++) ctx.fillRect(px+3+i*4,py+3,2,T-6);
+        break; }
+      case STRUCT.MINE:{
+        ctx.fillStyle="#4a4750"; ctx.fillRect(px+2,py+5,T-4,T-6);
+        ctx.fillStyle="#1a1a1f"; ctx.beginPath(); ctx.arc(cx,py+10,3,Math.PI,0); ctx.fill();
+        ctx.fillStyle="#8b6f3a"; ctx.fillRect(px+3,py+4,1,4); ctx.fillRect(px+T-4,py+4,1,4);
+        break; }
+      case STRUCT.TOWNHALL:{
+        ctx.fillStyle="#8a6a3a"; ctx.fillRect(px+2,py+6,T-4,T-7);
+        ctx.fillStyle="#caa24a"; ctx.beginPath();
+        ctx.moveTo(px+1,py+6); ctx.lineTo(cx,py+1); ctx.lineTo(px+T-1,py+6); ctx.fill();
+        ctx.fillStyle="#ffcf5c"; ctx.fillRect(cx,py-1,1,3);           // flagpole
+        ctx.fillStyle="#4fc3f7"; ctx.fillRect(cx+1,py-1,3,2);
+        break; }
+      case STRUCT.RUIN:{
+        ctx.fillStyle="#4a4448"; ctx.fillRect(px+3,py+8,3,4); ctx.fillRect(px+8,py+7,3,5);
+        break; }
+    }
+  }
+
+  /* Main per-frame render. `alpha` = interpolation fraction between ticks. */
+  render(){
+    const ctx=this.ctx, cam=this.game.camera, T=CONFIG.TILE;
+    this.frame++;
+    if(this.game.world.dirty) this.drawTerrain();
+
+    // clear
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle="#0c0d10";
+    ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+
+    // camera transform (with screen shake)
+    let shx=0,shy=0;
+    if(cam.shakeAmt>0){ shx=(Math.random()-0.5)*cam.shakeAmt; shy=(Math.random()-0.5)*cam.shakeAmt; }
+    ctx.setTransform(cam.zoom,0,0,cam.zoom, -cam.x*cam.zoom+shx, -cam.y*cam.zoom+shy);
+
+    // terrain blit
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(this.terrain,0,0);
+
+    // animated water shimmer overlay (cheap, only visible tiles)
+    this._waterShimmer(ctx);
+
+    // fire glow on burning tiles
+    this._fireLayer(ctx);
+
+    // entities
+    this._entities(ctx);
+
+    // settlement labels
+    this._labels(ctx);
+
+    // effects
+    this._effects(ctx);
+
+    // brush cursor
+    this._cursor(ctx);
+  }
+
+  _visibleTileBounds(){
+    const cam=this.game.camera, T=CONFIG.TILE;
+    const x0=Math.max(0,Math.floor(cam.x/T)-1);
+    const y0=Math.max(0,Math.floor(cam.y/T)-1);
+    const x1=Math.min(this.game.world.w-1,Math.ceil((cam.x+this.canvas.width/cam.zoom)/T)+1);
+    const y1=Math.min(this.game.world.h-1,Math.ceil((cam.y+this.canvas.height/cam.zoom)/T)+1);
+    return {x0,y0,x1,y1};
+  }
+
+  _waterShimmer(ctx){
+    const w=this.game.world, T=CONFIG.TILE, b=this._visibleTileBounds();
+    const ph=this.frame*0.12;
+    ctx.fillStyle="rgba(190,233,255,0.10)";
+    for(let y=b.y0;y<=b.y1;y++)for(let x=b.x0;x<=b.x1;x++){
+      const t=w.tiles[y*w.w+x];
+      if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER){
+        const off=Math.sin(ph+x*0.6+y*0.4)*2;
+        ctx.fillRect(x*T+2, y*T+7+off, T-4, 1);
+      }
+    }
+  }
+
+  _fireLayer(ctx){
+    const w=this.game.world,T=CONFIG.TILE,b=this._visibleTileBounds();
+    for(let y=b.y0;y<=b.y1;y++)for(let x=b.x0;x<=b.x1;x++){
+      const t=w.tiles[y*w.w+x];
+      if(t.burn>0){
+        const px=x*T,py=y*T;
+        const flick=0.5+Math.random()*0.5;
+        ctx.fillStyle=`rgba(255,${100+Math.random()*80|0},40,${0.4*t.burn+0.2})`;
+        ctx.fillRect(px+2,py+2,T-4,T-4);
+        ctx.fillStyle=`rgba(255,220,120,${0.6*flick})`;
+        ctx.fillRect(px+T/2-1,py+3,2,4*flick);
+      }
+      if(t.acid>0){
+        ctx.fillStyle="rgba(158,203,58,0.22)";
+        ctx.fillRect(x*T,y*T,T,T);
+      }
+    }
+  }
+
+  _entities(ctx){
+    const T=CONFIG.TILE, cam=this.game.camera;
+    for(const e of this.game.entities.list){
+      const px=e.x*T, py=e.y*T;
+      // skip if off-screen (cheap cull)
+      if(px<cam.x-T||py<cam.y-T||px>cam.x+this.canvas.width/cam.zoom+T||py>cam.y+this.canvas.height/cam.zoom+T) continue;
+      const col=this._raceColor(e);
+      // shadow
+      ctx.fillStyle="rgba(0,0,0,0.28)";
+      ctx.beginPath(); ctx.ellipse(px,py+3,3.2,1.6,0,0,7); ctx.fill();
+      // body pixel
+      ctx.fillStyle=col;
+      const s = e.isLeader?4.4:(e.race===RACE.MONSTER?4.8:3.4);
+      ctx.fillRect(px-s/2, py-s, s, s);
+      // head dot
+      ctx.fillStyle=this._shade(col,1.25);
+      ctx.fillRect(px-1, py-s-1.5, 2, 2);
+      // leader crown
+      if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-2,py-s-3,4,1.4); }
+      // low-hp flash
+      if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.5)"; ctx.fillRect(px-s/2,py-s,s,s); }
+      // carrying resource tick
+      if(e.carry>0){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px+2,py-s,1.6,1.6); }
+    }
+  }
+
+  _raceColor(e){
+    if(e.race===RACE.ORC) return "#7ed957";
+    if(e.race===RACE.MONSTER) return "#c95fff";
+    if(e.race===RACE.ELF) return e.settlement? "#8fe0c0":"#5ce0b0";
+    // humans coloured by their settlement banner
+    return e.settlement? e.settlement.color : "#e7d3a0";
+  }
+  _shade(hex,f){
+    const n=parseInt(hex.slice(1),16);
+    const r=clamp(((n>>16)&255)*f,0,255)|0, g=clamp(((n>>8)&255)*f,0,255)|0, b=clamp((n&255)*f,0,255)|0;
+    return `rgb(${r},${g},${b})`;
+  }
+
+  _labels(ctx){
+    const T=CONFIG.TILE, cam=this.game.camera;
+    if(cam.zoom<0.7) return; // hide labels when very zoomed out
+    ctx.textAlign="center";
+    ctx.font=`${Math.max(7,7/cam.zoom*cam.zoom)}px "Courier New",monospace`;
+    for(const s of this.game.settlements.list){
+      if(s.destroyed)continue;
+      const px=s.cx*T+T/2, py=s.cy*T-8;
+      const label=`${s.name}`;
+      ctx.font="bold 8px 'Courier New',monospace";
+      ctx.fillStyle="rgba(0,0,0,0.55)";
+      const w=ctx.measureText(label).width+6;
+      ctx.fillRect(px-w/2,py-8,w,10);
+      ctx.fillStyle=s.color;
+      ctx.fillText(label,px,py);
+      ctx.fillStyle="rgba(255,255,255,0.6)";
+      ctx.font="7px 'Courier New',monospace";
+      ctx.fillText(`${s.title} · ${s.pop}`,px,py+7);
+    }
+  }
+
+  _effects(ctx){
+    const T=CONFIG.TILE;
+    for(const e of this.game.effects.fx){
+      const p=e.t/e.life;               // 0..1 progress
+      const px=e.x*T, py=e.y*T;
+      ctx.save();
+      switch(e.type){
+        case "lightning":{
+          ctx.strokeStyle=`rgba(191,233,255,${1-p})`;
+          ctx.lineWidth=2;
+          ctx.beginPath();
+          let lx=px, ly=py-CONFIG.TILE*8;
+          ctx.moveTo(lx,ly);
+          for(let i=0;i<8;i++){ lx+= (Math.random()-0.5)*10; ly+=CONFIG.TILE; ctx.lineTo(lx,ly); }
+          ctx.stroke();
+          if(p<0.3){ ctx.fillStyle=`rgba(255,255,255,${0.5*(1-p/0.3)})`; ctx.beginPath(); ctx.arc(px,py,T,0,7); ctx.fill(); }
+          break; }
+        case "meteor":{
+          const sx=px+ (1-p)*CONFIG.TILE*10, sy=py-(1-p)*CONFIG.TILE*10;
+          ctx.strokeStyle="rgba(255,180,90,0.8)"; ctx.lineWidth=3;
+          ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx- CONFIG.TILE*3, sy- CONFIG.TILE*3); ctx.stroke();
+          ctx.fillStyle=e.color; ctx.beginPath(); ctx.arc(sx,sy,4,0,7); ctx.fill();
+          break; }
+        case "explosion":{
+          for(const pt of e.parts){
+            const d=p*CONFIG.TILE*e.size*2.2;
+            ctx.fillStyle=`rgba(255,${180-p*120|0},${60-p*60|0},${1-p})`;
+            ctx.beginPath(); ctx.arc(px+pt.dx*d, py+pt.dy*d, pt.r*(1-p*0.6),0,7); ctx.fill();
+          }
+          ctx.fillStyle=`rgba(255,240,180,${0.6*(1-p)})`;
+          ctx.beginPath(); ctx.arc(px,py,T*e.size*(0.4+p),0,7); ctx.fill();
+          break; }
+        case "acid":{
+          for(const pt of e.parts){
+            const yy=py + (pt.dy)*CONFIG.TILE + ((p+pt.ph)%1)*CONFIG.TILE*e.size;
+            ctx.fillStyle=`rgba(158,203,58,${0.7*(1-p)})`;
+            ctx.fillRect(px+pt.dx*CONFIG.TILE, yy, 1.5, 3);
+          }
+          break; }
+        case "quake":{
+          ctx.strokeStyle=`rgba(138,122,90,${1-p})`; ctx.lineWidth=2;
+          for(let r=1;r<=e.size;r++){ ctx.beginPath(); ctx.arc(px,py,r*T*p,0,7); ctx.stroke(); }
+          break; }
+        case "hit":{
+          ctx.fillStyle=`rgba(255,80,80,${1-p})`;
+          ctx.fillRect(px-2,py-2,4,4);
+          ctx.strokeStyle=`rgba(255,255,255,${1-p})`;
+          ctx.beginPath(); ctx.arc(px,py,T*0.4*p,0,7); ctx.stroke();
+          break; }
+        case "chip":{
+          for(const pt of e.parts){
+            ctx.fillStyle=e.color;
+            ctx.fillRect(px+pt.dx*p*8, py+pt.dy*p*8 - p*4, pt.r, pt.r);
+          }
+          break; }
+        case "build":{
+          ctx.strokeStyle=`rgba(255,207,92,${1-p})`; ctx.lineWidth=1.5;
+          ctx.strokeRect(px-6*(1-p),py-6*(1-p),12*(1-p),12*(1-p));
+          for(const pt of e.parts){ ctx.fillStyle=e.color; ctx.fillRect(px+pt.dx*p*10, py-pt.dy*p*10, pt.r,pt.r); }
+          break; }
+      }
+      ctx.restore();
+    }
+  }
+
+  _cursor(ctx){
+    const g=this.game;
+    if(!g.ui.hoverTile) return;
+    const {x,y}=g.ui.hoverTile;
+    const T=CONFIG.TILE, r=g.ui.brush;
+    ctx.strokeStyle="rgba(255,255,255,0.6)";
+    ctx.lineWidth=1.5;
+    if(r===0){ ctx.strokeRect(x*T,y*T,T,T); }
+    else { ctx.beginPath(); ctx.arc(x*T+T/2,y*T+T/2,(r+0.5)*T,0,7); ctx.stroke(); }
+  }
+}
+
+/* ==========================================================================
+   15.  TOOL DEFINITIONS  (god powers)
+   ========================================================================== */
+const TOOLS = [
+  {cat:"Nature",cls:"cat-nature",items:[
+    {id:"grass",  icon:"🌿",name:"Grass",  desc:"<b>Grass</b> — paint fertile grassland. Life flourishes here."},
+    {id:"tree",   icon:"🌳",name:"Trees",  desc:"<b>Trees</b> — grow forests that provide wood and shelter."},
+    {id:"flower", icon:"🌸",name:"Flowers",desc:"<b>Flowers</b> — scatter blossoms across fertile land."},
+    {id:"water",  icon:"💧",name:"Water",  desc:"<b>Water</b> — carve rivers and lakes. Blocks movement."},
+    {id:"volcano",icon:"🌋",name:"Volcano",desc:"<b>Volcano</b> — erupt a lava vent that scorches the land."},
+  ]},
+  {cat:"Life",cls:"cat-life",items:[
+    {id:"human",  icon:"🧑",name:"Human", desc:"<b>Humans</b> — settlers who build kingdoms, farms and roads."},
+    {id:"orc",    icon:"👹",name:"Orc",   desc:"<b>Orcs</b> — raiders that sack settlements and slay the weak."},
+    {id:"elf",    icon:"🧝",name:"Elf",   desc:"<b>Elves</b> — forest folk who reforest and gather efficiently."},
+    {id:"monster",icon:"🐉",name:"Monster",desc:"<b>Monsters</b> — feral beasts that attack any civilization."},
+  ]},
+  {cat:"Disasters",cls:"cat-disaster",items:[
+    {id:"lightning",icon:"⚡",name:"Lightning",desc:"<b>Lightning</b> — a bolt that kills and ignites forests."},
+    {id:"fire",     icon:"🔥",name:"Fire",     desc:"<b>Fire</b> — flames that spread across dry land and woods."},
+    {id:"acid",     icon:"☣️",name:"Acid Rain",desc:"<b>Acid Rain</b> — withers vegetation across an area."},
+    {id:"meteor",   icon:"☄️",name:"Meteor",   desc:"<b>Meteor</b> — a devastating impact that reshapes geography."},
+    {id:"quake",    icon:"🌐",name:"Earthquake",desc:"<b>Earthquake</b> — shatters structures within an area."},
+  ]},
+  {cat:"Civilization",cls:"cat-civ",items:[
+    {id:"house", icon:"🏠",name:"House",desc:"<b>House</b> — raises population capacity for a settlement."},
+    {id:"farm",  icon:"🌾",name:"Farm", desc:"<b>Farm</b> — produces food on fertile ground."},
+    {id:"mine",  icon:"⛏️",name:"Mine", desc:"<b>Mine</b> — extracts stone from rocky terrain."},
+    {id:"road",  icon:"🛣️",name:"Road", desc:"<b>Road</b> — links settlements and speeds travel."},
+  ]},
+];
+
+/* ==========================================================================
+   16.  UI MANAGER  —  HUD, god-power panel, chronicle, and all input
+   ========================================================================== */
+class UIManager{
+  constructor(game){
+    this.game=game;
+    this.tool="human";
+    this.brush=1;              // radius 0..4
+    this.hoverTile=null;
+    this.selectedSettlement=null;
+    this._toastTimer=null;
+    this._buildPanel();
+    this._bind();
+    this.syncControls();
+    this.selectTool("human");
+  }
+
+  /* --- build the god-power buttons from the TOOLS table ------------------ */
+  _buildPanel(){
+    const host=document.getElementById("godpowers");
+    host.innerHTML="";
+    for(const group of TOOLS){
+      const c=document.createElement("div");
+      c.className="category "+group.cls;
+      c.innerHTML=`<h2>${group.cat}</h2>`;
+      const grid=document.createElement("div");
+      grid.className="tool-grid";
+      for(const it of group.items){
+        const b=document.createElement("div");
+        b.className="tool"; b.dataset.tool=it.id;
+        b.innerHTML=`<span class="ti">${it.icon}</span><span class="tn">${it.name}</span>`;
+        b.addEventListener("click",()=>this.selectTool(it.id));
+        b.addEventListener("mouseenter",()=>{document.getElementById("tooldesc").innerHTML=it.desc;});
+        grid.appendChild(b);
+      }
+      c.appendChild(grid);
+      host.appendChild(c);
+    }
+  }
+
+  selectTool(id){
+    this.tool=id;
+    document.querySelectorAll(".tool").forEach(t=>t.classList.toggle("active",t.dataset.tool===id));
+    const def=TOOLS.flatMap(g=>g.items).find(i=>i.id===id);
+    if(def) document.getElementById("tooldesc").innerHTML=def.desc;
+  }
+
+  /* --- wire up all DOM & canvas events ----------------------------------- */
+  _bind(){
+    const g=this.game, cv=g.renderer.canvas;
+
+    // top-bar controls
+    document.getElementById("btn-play").addEventListener("click",()=>g.sim.togglePause());
+    [["btn-s1",1],["btn-s2",2],["btn-s5",5]].forEach(([id,sp])=>{
+      document.getElementById(id).addEventListener("click",()=>g.sim.setSpeed(sp));
+    });
+    document.getElementById("btn-reset").addEventListener("click",()=>g.reset());
+
+    // zoom controls
+    document.getElementById("zoom-in").addEventListener("click",()=>this._zoomBy(1.25));
+    document.getElementById("zoom-out").addEventListener("click",()=>this._zoomBy(0.8));
+    document.getElementById("zoom-home").addEventListener("click",()=>{g.camera.fit(cv.width,cv.height);});
+
+    // brush slider
+    const bs=document.getElementById("brushSize");
+    bs.addEventListener("input",()=>{this.brush=+bs.value;document.getElementById("brushVal").textContent=this.brush;});
+
+    // right-panel tabs
+    document.querySelectorAll(".tab").forEach(tab=>{
+      tab.addEventListener("click",()=>{
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        document.querySelectorAll(".tabpage").forEach(p=>p.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("page-"+tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    // ---- canvas input: paint / pan / zoom ----
+    let painting=false, panning=false, lastX=0,lastY=0;
+
+    const applyAt=(sx,sy)=>{
+      const {x,y}=g.camera.screenToTile(sx,sy);
+      this.applyTool(x,y);
+    };
+
+    cv.addEventListener("mousedown",(ev)=>{
+      const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
+      if(ev.button===1 || ev.button===2){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
+      else if(ev.button===0){
+        // select settlement if clicking near a town hall & using a non-painting inspect? -> left always paints
+        painting=true; applyAt(sx,sy);
+      }
+    });
+    window.addEventListener("mousemove",(ev)=>{
+      const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
+      if(sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
+        this.hoverTile=g.camera.screenToTile(sx,sy);
+      } else this.hoverTile=null;
+      if(panning){
+        g.camera.x-=(ev.clientX-lastX)/g.camera.zoom;
+        g.camera.y-=(ev.clientY-lastY)/g.camera.zoom;
+        lastX=ev.clientX; lastY=ev.clientY;
+        g.camera.clampCam(cv.width,cv.height);
+      } else if(painting && sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
+        applyAt(sx,sy);
+      }
+    });
+    window.addEventListener("mouseup",()=>{painting=false;panning=false;});
+    cv.addEventListener("contextmenu",e=>e.preventDefault());
+    cv.addEventListener("mouseleave",()=>{this.hoverTile=null;});
+
+    // wheel zoom toward cursor
+    cv.addEventListener("wheel",(ev)=>{
+      ev.preventDefault();
+      const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
+      const before=g.camera.screenToTile(sx,sy);
+      this._zoomBy(ev.deltaY<0?1.15:0.87, false);
+      const after=g.camera.screenToTile(sx,sy);
+      g.camera.x += (before.x-after.x)*CONFIG.TILE;
+      g.camera.y += (before.y-after.y)*CONFIG.TILE;
+      g.camera.clampCam(cv.width,cv.height);
+    },{passive:false});
+
+    // keyboard shortcuts
+    window.addEventListener("keydown",(ev)=>{
+      if(ev.code==="Space"){ ev.preventDefault(); g.sim.togglePause(); }
+      else if(ev.key==="1")g.sim.setSpeed(1);
+      else if(ev.key==="2")g.sim.setSpeed(2);
+      else if(ev.key==="5")g.sim.setSpeed(5);
+      else if(ev.key==="+"||ev.key==="=")this._zoomBy(1.2);
+      else if(ev.key==="-")this._zoomBy(0.83);
+      const map={g:"grass",t:"tree",f:"flower",w:"water",h:"human",o:"orc",e:"elf",m:"monster"};
+      if(map[ev.key]) this.selectTool(map[ev.key]);
+    });
+
+    window.addEventListener("resize",()=>{
+      g.renderer.resize();
+      g.camera.clampCam(cv.width,cv.height);
+    });
+  }
+
+  _zoomBy(f,recentre=true){
+    const g=this.game, cv=g.renderer.canvas;
+    const cx=cv.width/2, cy=cv.height/2;
+    const before=recentre? g.camera.screenToTile(cx,cy):null;
+    g.camera.zoom=clamp(g.camera.zoom*f,g.camera.minZoom,g.camera.maxZoom);
+    if(recentre){
+      const after=g.camera.screenToTile(cx,cy);
+      g.camera.x+=(before.x-after.x)*CONFIG.TILE;
+      g.camera.y+=(before.y-after.y)*CONFIG.TILE;
+    }
+    g.camera.clampCam(cv.width,cv.height);
+  }
+
+  /* --- apply the current god power at a tile (respecting brush size) ----- */
+  applyTool(cx,cy){
+    const g=this.game, w=g.world;
+    if(!w.inBounds(cx,cy)) return;
+    const r=this.brush;
+    const single = ["volcano","meteor","quake","lightning","human","orc","elf","monster"].includes(this.tool);
+
+    if(single){
+      this._applySingle(cx,cy); return;
+    }
+    // painting tools affect a brush area
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      if(dx*dx+dy*dy>r*r+ (r>0?0.5:0)) continue;
+      this._applyBrush(cx+dx,cy+dy);
+    }
+    w.dirty=true;
+  }
+
+  _applyBrush(x,y){
+    const w=this.game.world, t=w.get(x,y); if(!t)return;
+    switch(this.tool){
+      case "grass": if(t.biome!==BIOME.DEEP_WATER){ t.biome=BIOME.GRASS; t.fertility=Math.max(t.fertility,0.6); t.resource=t.resource===RES.STONE?RES.NONE:t.resource; } break;
+      case "tree":  if(t.walkable && t.structure===STRUCT.NONE){ t.resource=RES.TREE; t.health=100; if(t.biome===BIOME.ROCK||t.biome===BIOME.ASH)t.biome=BIOME.FOREST_FLOOR; } break;
+      case "flower":if(t.walkable && t.resource===RES.NONE){ t.resource=RES.FLOWER; t.health=100; } break;
+      case "water": t.biome= (Math.random()<0.6)?BIOME.WATER:BIOME.DEEP_WATER; t.resource=RES.NONE; t.structure=STRUCT.NONE; t.fertility=0.9; break;
+      case "fire":  this.game.disasters.startFire(x,y); break;
+      case "acid":  t.acid=6; this.game.disasters.acid.push({x,y}); break;
+      case "house": case "farm": case "mine": case "road": this._placeStructure(x,y); break;
+    }
+  }
+
+  _applySingle(x,y){
+    const g=this.game;
+    switch(this.tool){
+      case "human":   for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.HUMAN,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Humans placed"); break;
+      case "orc":     for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.ORC,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Orcs unleashed"); break;
+      case "elf":     for(let i=0;i<1+this.brush;i++)g.entities.spawn(RACE.ELF,x+ (Math.random()-.5), y+(Math.random()-.5)); this.toast("Elves placed"); break;
+      case "monster": g.entities.spawn(RACE.MONSTER,x,y); this.toast("A monster prowls"); break;
+      case "lightning": g.disasters.lightning(x,y); break;
+      case "meteor":  g.disasters.meteor(x,y); break;
+      case "quake":   g.disasters.earthquake(x,y); break;
+      case "volcano": g.disasters.volcano(x,y); break;
+    }
+  }
+
+  _placeStructure(x,y){
+    const w=this.game.world, t=w.get(x,y); if(!t||!t.walkable)return;
+    const map={house:STRUCT.HOUSE,farm:STRUCT.FARM,mine:STRUCT.MINE,road:STRUCT.ROAD};
+    if(t.structure!==STRUCT.NONE && this.tool!=="road") return;
+    t.structure=map[this.tool]; t.health=120; t.resource=RES.NONE;
+    // attach to nearest settlement (so it counts economically)
+    let best=null,bd=1e9;
+    for(const s of this.game.settlements.list){ if(s.destroyed)continue; const d=dist2(x,y,s.cx,s.cy); if(d<bd){bd=d;best=s;} }
+    if(best && bd<24*24){ t.owner=best.id; best.territory.add(y*w.w+x); this.game.settlements._recount(best); }
+    w.dirty=true;
+  }
+
+  /* --- HUD refresh (called each frame, cheap) ---------------------------- */
+  updateHUD(){
+    const g=this.game;
+    let pop=g.entities.list.length;
+    let food=0,wood=0,stone=0;
+    for(const s of g.settlements.list){ if(s.destroyed)continue; food+=s.res.food; wood+=s.res.wood; stone+=s.res.stone; }
+    document.getElementById("s-year").textContent=g.sim.year;
+    document.getElementById("s-pop").textContent=pop;
+    document.getElementById("s-food").textContent=Math.floor(food);
+    document.getElementById("s-wood").textContent=Math.floor(wood);
+    document.getElementById("s-stone").textContent=Math.floor(stone);
+    document.getElementById("s-settle").textContent=g.settlements.activeCount();
+    const pill=document.getElementById("seasonPill");
+    pill.textContent=`${g.sim.seasonIcon} ${g.sim.seasonName}`;
+    pill.style.background={Spring:"#2c4a2c",Summer:"#4a4322",Autumn:"#4a3322",Winter:"#233a4a"}[g.sim.seasonName];
+  }
+
+  syncControls(){
+    const g=this.game;
+    const play=document.getElementById("btn-play");
+    play.textContent=g.sim.paused?"▶ Play":"⏸ Pause";
+    play.classList.toggle("active",!g.sim.paused);
+    [["btn-s1",1],["btn-s2",2],["btn-s5",5]].forEach(([id,sp])=>{
+      document.getElementById(id).classList.toggle("active",g.sim.speed===sp && !g.sim.paused);
+    });
+  }
+
+  toast(msg){
+    const el=document.getElementById("toast");
+    el.textContent=msg; el.classList.add("show");
+    clearTimeout(this._toastTimer);
+    this._toastTimer=setTimeout(()=>el.classList.remove("show"),1600);
+  }
+
+  /* --- right-panel renderers --------------------------------------------- */
+  renderChronicle(){
+    const host=document.getElementById("page-chronicle");
+    if(!this.game.chronicle.entries.length){ host.innerHTML='<div class="empty">The world is young.<br>Place life and shape the land to begin its story.</div>'; return; }
+    const items=this.game.chronicle.entries.slice(-80).reverse();
+    host.innerHTML=items.map(e=>`<div class="logentry ${e.type}"><span class="yr">Y${e.year}</span>${e.text}</div>`).join("");
+    host.scrollTop=0;
+  }
+  renderKingdoms(){
+    const host=document.getElementById("page-kingdoms");
+    const list=this.game.settlements.list.filter(s=>!s.destroyed).sort((a,b)=>b.pop-a.pop);
+    if(!list.length){ host.innerHTML='<div class="empty">No settlements yet.<br>Place humans or elves and watch them build.</div>'; return; }
+    host.innerHTML=list.map(s=>{
+      const h=Math.floor(s.happiness);
+      const hcol=h>60?"var(--success)":h>35?"var(--gold)":"var(--danger)";
+      return `<div class="kcard" style="border-left-color:${s.color}">
+        <h3>${s.name} <span class="race">· ${s.title}</span></h3>
+        <div class="race">${s.kingdom} — ${s.race}</div>
+        <div class="row"><span>👑 ${s.leader?s.leader.name:'—'}</span></div>
+        <div class="row"><span>Pop</span><b>${s.pop}/${s.capacity}</b></div>
+        <div class="row"><span>🍖 ${Math.floor(s.res.food)}</span><span>🪵 ${Math.floor(s.res.wood)}</span><span>⛏️ ${Math.floor(s.res.stone)}</span></div>
+        <div class="row"><span>🏠 ${s.houses}</span><span>🌾 ${s.farms}</span><span>⛏️ ${s.mines}</span></div>
+        <div class="row"><span>Happiness</span><b style="color:${hcol}">${h}%</b></div>
+        <div class="kbar"><i style="width:${h}%;background:${hcol}"></i></div>
+      </div>`;
+    }).join("");
+  }
+  renderAchievements(){
+    const host=document.getElementById("page-achieve");
+    const a=this.game.chronicle.achievements;
+    if(!a.length){ host.innerHTML='<div class="empty">No legends yet.<br>Great deeds and disasters will be remembered here.</div>'; return; }
+    host.innerHTML=a.slice().reverse().map(x=>`<div class="ach"><span class="ai">${x.icon}</span><div><div class="at">${x.title}</div><div class="ad">${x.desc} · Year ${x.year}</div></div></div>`).join("");
+  }
+}
+
+/* ==========================================================================
+   17.  GAME  —  top-level orchestrator & main loop
+   ========================================================================== */
+class Game{
+  constructor(){
+    this.seed=(Math.random()*1e9)|0;
+    this.world=new World(CONFIG.W,CONFIG.H);
+    this.world.generate(this.seed);
+
+    // managers
+    this.sim=new SimulationManager(this);
+    this.entities=new EntityManager(this);
+    this.settlements=new SettlementManager(this);
+    this.disasters=new DisasterManager(this);
+    this.effects=new EffectManager(this);
+    this.chronicle=new Chronicle(this);
+    this.camera=new Camera(this);
+
+    // view
+    this.renderer=new Renderer(this,document.getElementById("world"));
+    this.renderer.resize();
+    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+
+    // UI last (needs renderer + managers)
+    this.ui=new UIManager(this);
+
+    this._seedWorld();
+    this.ui.renderChronicle();
+    this.ui.renderKingdoms();
+    this.ui.renderAchievements();
+
+    this.last=performance.now();
+    this._kingdomsCd=0;
+    this.chronicle.log("🌍 A new world is born, split between fire and life.","found");
+    requestAnimationFrame(this.loop.bind(this));
+  }
+
+  /* place a small starting population so there is something to watch */
+  _seedWorld(){
+    const w=this.world;
+    // a cluster of humans on the fertile right bank
+    const hx=Math.floor(w.w*0.72), hy=Math.floor(w.h*0.5);
+    for(let i=0;i<8;i++) this.entities.spawn(RACE.HUMAN, hx+rint(Math.random,-3,3), hy+rint(Math.random,-3,3));
+    // a grove of elves further into the forest
+    const ex=Math.floor(w.w*0.85), ey=Math.floor(w.h*0.7);
+    for(let i=0;i<5;i++) this.entities.spawn(RACE.ELF, ex+rint(Math.random,-3,3), ey+rint(Math.random,-3,3));
+    // a lurking orc warband on the wasteland border
+    const ox=Math.floor(w.w*0.4), oy=Math.floor(w.h*0.35);
+    for(let i=0;i<3;i++) this.entities.spawn(RACE.ORC, ox+rint(Math.random,-2,2), oy+rint(Math.random,-2,2));
+  }
+
+  reset(){
+    this.seed=(Math.random()*1e9)|0;
+    SETTLE_ID=1; ENTITY_ID=1;
+    this.world=new World(CONFIG.W,CONFIG.H);
+    this.world.generate(this.seed);
+    this.entities=new EntityManager(this);
+    this.settlements=new SettlementManager(this);
+    this.disasters=new DisasterManager(this);
+    this.effects.clear();
+    this.chronicle=new Chronicle(this);
+    this.sim.ticks=0; this.sim.acc=0; this.sim.queue.length=0; this.sim.season=0; this.sim.paused=false;
+    this.renderer=new Renderer(this,document.getElementById("world"));
+    this.renderer.resize();
+    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+    this._seedWorld();
+    this.chronicle.log("🌍 The god remakes the world anew.","found");
+    this.ui.renderChronicle(); this.ui.renderKingdoms(); this.ui.renderAchievements();
+    this.ui.syncControls();
+    this.ui.toast("World regenerated");
+  }
+
+  /* --- world-level per-tick upkeep (regrowth, cooling, seasons) ---------- */
+  world_tick(){
+    const w=this.world, sim=this.sim;
+    // regrow a handful of random tiles each tick to keep forests alive
+    for(let i=0;i<30;i++){
+      const x=rint(Math.random,0,w.w-1), y=rint(Math.random,0,w.h-1);
+      const t=w.get(x,y);
+      if(!t)continue;
+      // trees slowly reclaim fertile empty ground (elf territory faster)
+      if(t.resource===RES.NONE && t.structure===STRUCT.NONE && t.walkable && t.fertility>0.55 &&
+         (t.biome===BIOME.FOREST_FLOOR||t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE)){
+        if(Math.random()<0.02*sim.seasonFactor){ t.resource=Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=30; w.dirty=true; }
+      }
+      // grown trees heal back to full
+      if((t.resource===RES.TREE||t.resource===RES.PINE)&&t.health<100){ t.health=Math.min(100,t.health+4); }
+      // dirt slowly returns to grass in fertile zones
+      if(t.biome===BIOME.DIRT && t.fertility>0.4 && Math.random()<0.01){ t.biome=BIOME.GRASS; w.dirty=true; }
+    }
+  }
+
+  onSeasonChange(){
+    this.ui.updateHUD();
+    if(this.sim.season===3) this.chronicle.log("❄️ Winter descends. Food grows scarce across the world.","info");
+    else if(this.sim.season===0 && this.sim.year>0) this.chronicle.log("🌱 Spring returns; the land renews itself.","info");
+  }
+
+  onNewYear(){
+    const y=this.sim.year;
+    // survival & scale achievements
+    if(this.entities.list.length>=50) this.chronicle.achieve("pop50","👥","A Thriving World","The world's population surpasses 50 souls.");
+    if(y>=100) this.chronicle.achieve("year100","📜","A Century of History","The world endures for 100 years.");
+    // legendary heroes: long-lived nomads
+    for(const e of this.entities.list){
+      if(!e.settlement && e.legendYears>50 && (e.race===RACE.HUMAN||e.race===RACE.ELF)){
+        this.chronicle.achieve("hero_"+e.id,"⭐",`${e.name} the Legend`,`A lone survivor endures ${Math.floor(e.legendYears)} years in the wild.`);
+      }
+    }
+    this.ui.renderKingdoms();
+  }
+
+  /* --- random world events fired periodically by the simulation ---------- */
+  fireRandomEvent(){
+    const w=this.world, roll=Math.random();
+    const rx=rint(Math.random,0,w.w-1), ry=rint(Math.random,0,w.h-1);
+    if(roll<0.14){
+      // wandering monster appears in the wilds
+      const x=rint(Math.random,0,Math.floor(w.w*0.5)), y=rint(Math.random,0,w.h-1);
+      if(this.world.get(x,y)?.walkable){ this.entities.spawn(RACE.MONSTER,x,y); this.chronicle.log("🐉 A monster emerges from the wasteland.","war"); }
+    } else if(roll<0.26){
+      this.disasters.startFire(rx,ry);
+    } else if(roll<0.36){
+      // bountiful harvest
+      for(const s of this.settlements.list){ if(!s.destroyed) s.res.food+=25; }
+      if(this.settlements.activeCount()) this.chronicle.log("🌾 A bountiful harvest blesses the realms! Granaries overflow.","trade");
+    } else if(roll<0.46){
+      // orc warband migration onto the map edge
+      const y=rint(Math.random,0,w.h-1);
+      for(let i=0;i<3;i++) this.entities.spawn(RACE.ORC, rint(Math.random,0,3), y+rint(Math.random,-2,2));
+      this.chronicle.log("👹 An orc warband marches from beyond the western ash.","war");
+    } else if(roll<0.55){
+      this.disasters.lightning(rx,ry);
+    } else if(roll<0.63){
+      // plague strikes a settlement
+      const alive=this.settlements.list.filter(s=>!s.destroyed && s.pop>3);
+      if(alive.length){ const s=choice(Math.random,alive); for(const m of s.members) if(Math.random()<0.3)m.hp-=40;
+        this.chronicle.log(`🤢 A plague sweeps through ${s.name}.`,"death"); }
+    } else if(roll<0.70){
+      // migration: nomads drawn to the largest realm
+      this.chronicle.log("🧭 Restless folk wander the roads seeking a new home.","info");
+      for(let i=0;i<3;i++){ const e=this.entities.spawn(RACE.HUMAN, rint(Math.random,Math.floor(w.w*0.55),w.w-1), rint(Math.random,0,w.h-1)); }
+    } else if(roll<0.76){
+      this.disasters.meteor(rx,ry);
+    } else {
+      // quiet year — nothing dramatic
+    }
+    this.ui.updateHUD();
+  }
+
+  /* --- the main animation loop ------------------------------------------ */
+  loop(now){
+    const dt=Math.min(0.05,(now-this.last)/1000);
+    this.last=now;
+
+    // advance simulation (fixed timestep inside)
+    this.sim.advance(dt);
+
+    // continuous / cosmetic updates
+    this.camera.update(dt);
+    this.effects.update(dt);
+
+    // render
+    this.renderer.render();
+
+    // HUD every frame (cheap); heavier panels throttled
+    this.ui.updateHUD();
+    this._kingdomsCd-=dt;
+    if(this._kingdomsCd<=0){ this.ui.renderKingdoms(); this._kingdomsCd=1.0; }
+
+    requestAnimationFrame(this.loop.bind(this));
+  }
+}
+
+/* --------------------------------------------------------------------------
+   18.  BOOT
+   -------------------------------------------------------------------------- */
+window.addEventListener("load",()=>{ window.GAME=new Game(); });
+</script>
+</body>
+</html>
