@@ -281,6 +281,28 @@ body{
 }
 .wtips b{color:var(--accent)}
 
+/* kingdom inspector panel */
+#kingdomPanel{
+  position:absolute;right:12px;bottom:12px;z-index:8;width:210px;
+  background:linear-gradient(180deg,#2f333b,#26292f);
+  border:2px solid var(--border);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden;font-size:11px;
+}
+#kingdomPanel.hidden{display:none}
+.kp-head{display:flex;align-items:center;gap:8px;padding:8px 9px;background:rgba(0,0,0,.25)}
+.kp-banner{width:16px;height:20px;border-radius:2px;border:1px solid var(--border);flex:none}
+.kp-name{font-weight:bold;font-size:13px;color:var(--text)}
+.kp-sub{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+.kp-close{margin-left:auto;cursor:pointer;color:var(--text-dim);font-size:12px}
+.kp-close:hover{color:var(--danger)}
+.kp-res{display:flex;justify-content:space-around;padding:7px 6px;background:rgba(0,0,0,.15);font-size:11px}
+.kp-res b{color:var(--gold)}
+.kp-valor{text-align:center;font-size:9px;color:var(--text-dim);padding:4px;letter-spacing:1px;text-transform:uppercase}
+.kp-rows{padding:2px 10px 10px}
+.kp-rows .r{display:flex;justify-content:space-between;padding:2.5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.kp-rows .r span{color:var(--text-dim)}
+.kp-rows .r b{color:var(--text)}
+
 /* ====================  RIGHT CHRONICLE PANEL  ============================= */
 #rightpanel{
   grid-area:right;
@@ -371,7 +393,7 @@ body{
     <button class="ctrlbtn active pixel" id="btn-s1" data-speed="1">x1</button>
     <button class="ctrlbtn pixel" id="btn-s2" data-speed="2">x2</button>
     <button class="ctrlbtn pixel" id="btn-s5" data-speed="5">x5</button>
-    <button class="ctrlbtn pixel" id="btn-generate" title="Generate a random procedural world (fire & life split by a river)">🌍 Generate</button>
+    <button class="ctrlbtn pixel" id="btn-generate" title="Forge a fresh Earth — continents, oceans & biomes">🌍 Earth</button>
     <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the world back to a blank canvas">↻ Reset</button>
   </div>
 
@@ -401,6 +423,23 @@ body{
     <div id="hint">Blank canvas — paint terrain &amp; place life · Middle-drag pan · Scroll zoom</div>
     <div id="toast"></div>
 
+    <!-- Kingdom inspector: opens when a realm is clicked (Inspect tool) or a
+         Realms card is selected. Mirrors the WorldBox kingdom panel. -->
+    <div id="kingdomPanel" class="hidden">
+      <div class="kp-head">
+        <span class="kp-banner" id="kp-banner"></span>
+        <div><div class="kp-name" id="kp-name">—</div><div class="kp-sub" id="kp-sub">Kingdom</div></div>
+        <span class="kp-close" id="kp-close">✕</span>
+      </div>
+      <div class="kp-res">
+        <span>🍖 <b id="kp-food">0</b></span>
+        <span>🪵 <b id="kp-wood">0</b></span>
+        <span>⚔️ <b id="kp-weap">0</b></span>
+      </div>
+      <div class="kp-valor">Progress and valor</div>
+      <div class="kp-rows" id="kp-rows"></div>
+    </div>
+
     <!-- Welcome / onboarding overlay: the world starts empty; the player
          chooses to build on a blank canvas or roll a random world. -->
     <div id="welcome">
@@ -415,8 +454,8 @@ body{
           </button>
           <button id="w-gen" class="wbtn">
             <span class="wi">🌍</span>
-            <span class="wt">Random World</span>
-            <span class="wd">Generate a wasteland-and-grassland map split by a river.</span>
+            <span class="wt">Earth</span>
+            <span class="wd">Forge a planet — real continents, oceans and biomes. Zoom out to see the globe.</span>
           </button>
         </div>
         <div class="wtips">
@@ -533,7 +572,9 @@ const rulerName   = ()=> choice(_nameRng,NAMES.first)+" "+choice(_nameRng,NAMES.
    -------------------------------------------------------------------------- */
 const BIOME = {
   DEEP_WATER:0, WATER:1, SAND:2, GRASS:3, FERTILE:4, FOREST_FLOOR:5,
-  ROCK:6, ASH:7, LAVA:8, CRATER:9, SNOW:10, DIRT:11
+  ROCK:6, ASH:7, LAVA:8, CRATER:9, SNOW:10, DIRT:11,
+  // Earth / varied biomes
+  SAVANNA:12, JUNGLE:13, DESERT:14, TUNDRA:15, MOUNTAIN:16, CANDY:17, SWAMP:18,
 };
 const RES = { NONE:0, TREE:1, STONE:2, FLOWER:3, BUSH:4, PINE:5 };
 // STRUCT: numeric ids stored on each tile; the renderer switches on these.
@@ -664,7 +705,17 @@ const BIOME_COL = {
   [BIOME.CRATER]    :["#332f38","#2b2830"],
   [BIOME.SNOW]      :["#dfe6ee","#cfd7e0"],
   [BIOME.DIRT]      :["#6b5138","#5f4830"],
+  [BIOME.SAVANNA]   :["#b7a24f","#ab9646"],
+  [BIOME.JUNGLE]    :["#2c7038","#256030"],
+  [BIOME.DESERT]    :["#e3cf83","#d8c377"],
+  [BIOME.TUNDRA]    :["#8a9a8c","#7f8f81"],
+  [BIOME.MOUNTAIN]  :["#79747f","#6d6873"],
+  [BIOME.CANDY]     :["#e46fac","#d9619f"],
+  [BIOME.SWAMP]     :["#48583a","#3f4f31"],
 };
+// Pre-parsed RGB triples per biome, for fast per-pixel globe sampling.
+const BIOME_RGB = {};
+for(const k in BIOME_COL){ const n=parseInt(BIOME_COL[k][0].slice(1),16); BIOME_RGB[k]=[(n>>16)&255,(n>>8)&255,n&255]; }
 
 /* --------------------------------------------------------------------------
    3.  TILE  —  a single cell of the world grid
@@ -806,6 +857,80 @@ class World{
     }
     this.dirty=true;
   }
+
+  /* ------------------------------------------------------------------------
+     EARTH generator: lays down recognizable continents (the Americas,
+     Eurasia, Africa, Australia, Antarctica) using summed "continent blobs"
+     (metaballs) warped by noise for organic coastlines, then paints biomes
+     by latitude (ice caps → tundra → temperate → desert bands → tropics) and
+     elevation (mountain ranges), scattering appropriate vegetation.
+     ---------------------------------------------------------------------- */
+  generateEarth(seed){
+    const rng=makeRNG(seed);
+    setNameRng(makeRNG((seed*2654435761)>>>0));
+    const coast=makeNoise(rng), elev=makeNoise(rng), moist=makeNoise(rng), detail=makeNoise(rng);
+    const {w,h}=this;
+    // continent centres in normalized [0,1] map space with radii + weight
+    const C=[
+      {x:0.20,y:0.30,rx:0.11,ry:0.15,wt:1.0}, // North America
+      {x:0.30,y:0.66,rx:0.07,ry:0.16,wt:0.95},// South America
+      {x:0.30,y:0.14,rx:0.05,ry:0.05,wt:0.7}, // Greenland
+      {x:0.50,y:0.27,rx:0.06,ry:0.07,wt:0.85},// Europe
+      {x:0.53,y:0.55,rx:0.10,ry:0.18,wt:1.0}, // Africa
+      {x:0.71,y:0.30,rx:0.18,ry:0.15,wt:1.0}, // Asia
+      {x:0.66,y:0.46,rx:0.05,ry:0.06,wt:0.8}, // India / Arabia
+      {x:0.78,y:0.54,rx:0.05,ry:0.05,wt:0.7}, // SE Asia
+      {x:0.84,y:0.74,rx:0.08,ry:0.06,wt:0.85},// Australia
+      {x:0.50,y:0.97,rx:0.60,ry:0.05,wt:1.2}, // Antarctica band
+    ];
+    for(let y=0;y<h;y++){
+      const nyv=y/h;                          // 0=north .. 1=south
+      const lat=1-Math.abs(nyv-0.5)*2;        // 1 at equator .. 0 at poles
+      for(let x=0;x<w;x++){
+        const nxv=x/w;
+        const t=this.tiles[this.idx(x,y)];
+        t.variant=Math.floor(rng()*3); t.resource=RES.NONE; t.structure=STRUCT.NONE;
+        t.owner=-1; t.burn=0; t.acid=0; t.growth=0;
+        // summed continental field + coastline warp
+        let field=0;
+        for(const c of C){
+          const dx=(nxv-c.x)/c.rx, dy=(nyv-c.y)/c.ry;
+          field += c.wt*Math.exp(-(dx*dx+dy*dy));
+        }
+        field += coast(nxv*6, nyv*6)*0.35 + coast(nxv*14, nyv*14)*0.12;
+        const isLand = field>0.55;
+        if(!isLand){
+          const deep = field<0.42;
+          t.biome = deep?BIOME.DEEP_WATER:BIOME.WATER;
+          t.temperature=clamp(0.4+lat*0.4,0,1); t.fertility=0.2;
+          continue;
+        }
+        // ---- LAND ----
+        const e = elev(nxv*7+11, nyv*7+11);        // elevation field
+        const m = 0.5 + moist(nxv*8+5, nyv*8+5)*0.5;// moisture 0..1
+        const coastN = field<0.68;                  // near the shoreline
+        t.temperature = clamp(lat - e*0.25, 0, 1);
+        // latitude belts
+        if(nyv>0.9 || nyv<0.06){ t.biome=BIOME.SNOW; t.temperature=0.02; t.fertility=0.05; }
+        else if(lat<0.18){ t.biome=BIOME.TUNDRA; t.fertility=0.25; if(rng()<0.08)t.resource=RES.PINE; }
+        else if(e>0.42){ t.biome=BIOME.MOUNTAIN; t.fertility=0.2; if(rng()<0.06){t.resource=RES.STONE;t.health=100;} }
+        else if(coastN && rng()<0.7){ t.biome=BIOME.SAND; t.fertility=0.4; }
+        else if(lat>0.82){ // equator
+          if(m>0.55){ t.biome=BIOME.JUNGLE; t.fertility=0.95; if(rng()<0.5)t.resource=RES.TREE; }
+          else { t.biome=BIOME.SAVANNA; t.fertility=0.5; if(rng()<0.06)t.resource=RES.BUSH; }
+        }
+        else if(lat>0.5 && m<0.4){ t.biome=BIOME.DESERT; t.fertility=0.1; }
+        else if(lat>0.62 && m<0.55){ t.biome=BIOME.SAVANNA; t.fertility=0.45; if(rng()<0.05)t.resource=RES.BUSH; }
+        else { // temperate
+          t.fertility=clamp(0.55+m*0.4,0.3,1);
+          if(m>0.5){ t.biome=BIOME.FOREST_FLOOR; if(rng()<0.4)t.resource=(rng()<0.7?RES.TREE:RES.PINE); }
+          else { t.biome=(t.fertility>0.75?BIOME.FERTILE:BIOME.GRASS); if(rng()<0.12)t.resource=RES.TREE; else if(rng()<0.2)t.resource=RES.FLOWER; }
+        }
+        if(t.resource && !t.health) t.health=100;
+      }
+    }
+    this.dirty=true;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -897,8 +1022,10 @@ class Kingdom{
 
     // holdings + aggregate metrics (recomputed each tick)
     this.settlements = [];                       // Settlement[]
+    this.gold = 15;                              // Ruler's Money (taxes)
     this.metrics = { population:0, military:0, homeless:0, homelessRate:0, crime:0,
-                     food:0, wood:0, stone:0, mana:0 };
+                     food:0, wood:0, stone:0, mana:0, weapons:0,
+                     adults:0, children:0, families:0, happy:0, villages:0 };
 
     // diplomacy
     this.relations = {};                         // kingdomId -> -100..100
@@ -1222,7 +1349,7 @@ class EntityManager{
     // realms consolidated rather than every wanderer starting their own).
     const tile=w.get(e.x|0,e.y|0);
     const goodGround = tile && tile.walkable && tile.fertility>0.4 &&
-        tile.structure===STRUCT.NONE && (tile.biome===BIOME.GRASS||tile.biome===BIOME.FERTILE||tile.biome===BIOME.FOREST_FLOOR||tile.biome===BIOME.DIRT);
+        tile.structure===STRUCT.NONE && (tile.biome===BIOME.GRASS||tile.biome===BIOME.FERTILE||tile.biome===BIOME.FOREST_FLOOR||tile.biome===BIOME.DIRT||tile.biome===BIOME.JUNGLE||tile.biome===BIOME.SAVANNA);
     if(goodGround && e.cooldown<=0 && Math.random()<0.03 && e.age>1){
       this.game.settlements.found(e);
       return;
@@ -1598,6 +1725,7 @@ class SettlementManager{
     s.members.length=0;
     const w=this.game.world;
     for(const idx of s.territory){ if(w.tiles[idx].owner===s.id) w.tiles[idx].owner=-1; }
+    w.dirty=true;   // refresh territory tint & borders in the terrain cache
     if(!k.alive){ k.destroyed=true; this.game.chronicle.log(`👑 The ${k.name} is extinguished from history.`,"war"); }
   }
 
@@ -1623,17 +1751,24 @@ class SettlementManager{
     const geniusMult = 1 + Math.max(0,k.cultureMod("research"));
     const factionMult = k.faction===FACTION.NEUTRAL?0.4:1.0;
     k.research += (k.pop*0.02 + sci) * geniusMult * factionMult;
+    k.gold += k.pop*0.01 + sci*0.05;      // the crown collects taxes
     k._applyTech();
     this._computeMetrics(k);
   }
 
   _computeMetrics(k){
     let pop=0,mil=0,cap=0,food=0,wood=0,stone=0,mana=0,happ=0,ns=0,towers=0;
+    let adults=0,children=0,happyCount=0,barr=0;
     for(const s of k.settlements){ if(s.destroyed)continue;
       pop+=s.pop; cap+=s.capacity;
       food+=s.res.food; wood+=s.res.wood; stone+=s.res.stone; mana+=s.res.mana;
-      happ+=s.happiness; ns++; towers+=s.buildings.watchtower;
-      for(const m of s.members) if(m.role==="soldier"||m.role==="mage") mil++;
+      happ+=s.happiness; ns++; towers+=s.buildings.watchtower; barr+=s.buildings.barracks;
+      const content = s.happiness>=55;
+      for(const m of s.members){
+        if(m.role==="soldier"||m.role==="mage") mil++;
+        if(m.age>=16){ adults++; } else { children++; }
+        if(content) happyCount++;
+      }
     }
     const homeless=Math.max(0,pop-cap);
     const avgHapp=ns?happ/ns:70;
@@ -1642,6 +1777,11 @@ class SettlementManager{
     m.population=pop; m.military=mil; m.homeless=homeless; m.homelessRate=pop?homeless/pop:0;
     m.crime += (crimeTarget-m.crime)*0.1; m.crime=clamp(m.crime,0,100);
     m.food=food; m.wood=wood; m.stone=stone; m.mana=mana;
+    m.adults=adults; m.children=children;
+    m.families=Math.max(0,Math.floor(adults/2));           // rough couples estimate
+    m.happy=happyCount;
+    m.villages=ns;
+    m.weapons=Math.floor(stone*0.4 + barr*20 + mil*3);     // stockpiled arms
     if(pop>k.peakPop)k.peakPop=pop;
   }
 
@@ -2076,11 +2216,18 @@ class Camera{
     this.game=game;
     this.x=0; this.y=0;             // world-pixel top-left
     this.zoom=1;
-    this.minZoom=0.4; this.maxZoom=4;
+    this.minZoom=0.16; this.maxZoom=4;   // low min so you can zoom out to the globe
     this.shakeAmt=0;
   }
   shake(a){ this.shakeAmt=Math.max(this.shakeAmt,a); }
   update(dt){ if(this.shakeAmt>0) this.shakeAmt=Math.max(0,this.shakeAmt-dt*40); }
+  /* Centre the view on a tile (used by the Realms list). */
+  centerOn(tx,ty,vw,vh){
+    if(this.zoom<0.7) this.zoom=1.2;
+    this.x=(tx+0.5)*CONFIG.TILE - vw/(2*this.zoom);
+    this.y=(ty+0.5)*CONFIG.TILE - vh/(2*this.zoom);
+    this.clampCam(vw,vh);
+  }
   worldPxW(){ return this.game.world.w*CONFIG.TILE; }
   worldPxH(){ return this.game.world.h*CONFIG.TILE; }
   clampCam(vw,vh){
@@ -2115,7 +2262,16 @@ class Renderer{
     this.terrain.height=game.world.h*CONFIG.TILE;
     this.tctx=this.terrain.getContext("2d");
     this.frame=0;
+    // globe (planet) rendering state
+    this.GS=200;                    // globe render-buffer resolution
+    this.globeRot=0;                // longitude rotation of the planet
+    this._globeLUT=null;            // precomputed per-pixel sphere geometry
+    this.stars=null;                // cached starfield
   }
+  // zoom thresholds for the flat↔globe crossfade
+  get GLOBE_HI(){ return 0.50; }    // below this, globe starts fading in
+  get GLOBE_LO(){ return 0.30; }    // at/below this, only the globe shows
+  globeAlpha(){ return clamp((this.GLOBE_HI-this.game.camera.zoom)/(this.GLOBE_HI-this.GLOBE_LO),0,1); }
   resize(){
     const c=this.canvas, p=c.parentElement;
     c.width=p.clientWidth; c.height=p.clientHeight;
@@ -2125,6 +2281,10 @@ class Renderer{
   /* Redraw the entire terrain cache. Called only when world.dirty is set. */
   drawTerrain(){
     const w=this.game.world, T=CONFIG.TILE, ctx=this.tctx;
+    // O(1) owner→colour lookup for territory tint & borders
+    const ownerCol={};
+    for(const s of this.game.settlements.list) if(!s.destroyed) ownerCol[s.id]=s.color;
+
     for(let y=0;y<w.h;y++){
       for(let x=0;x<w.w;x++){
         const t=w.tiles[y*w.w+x];
@@ -2133,16 +2293,32 @@ class Renderer{
         const cols=BIOME_COL[t.biome];
         ctx.fillStyle = ((x+y+t.variant)&1)?cols[0]:cols[1];
         ctx.fillRect(px,py,T,T);
-        // territory tint (subtle)
-        if(t.owner>=0){
-          const s=this.game.settlements.list.find(z=>z.id===t.owner);
-          if(s && !s.destroyed){ ctx.fillStyle=this._alpha(s.color,0.12); ctx.fillRect(px,py,T,T); }
+        // blocky bevel — a chunky "block" edge on land tiles
+        const water=t.biome===BIOME.DEEP_WATER||t.biome===BIOME.WATER;
+        if(!water){
+          ctx.fillStyle="rgba(255,255,255,0.055)"; ctx.fillRect(px,py,T,1); ctx.fillRect(px,py,1,T);
+          ctx.fillStyle="rgba(0,0,0,0.13)";        ctx.fillRect(px,py+T-1,T,1); ctx.fillRect(px+T-1,py,1,T);
         }
+        // territory tint (subtle)
+        if(t.owner>=0 && ownerCol[t.owner]){ ctx.fillStyle=this._alpha(ownerCol[t.owner],0.14); ctx.fillRect(px,py,T,T); }
         this._tileDetail(ctx,t,px,py,T,x,y);
-        // resources
         if(t.resource) this._resource(ctx,t,px,py,T);
-        // structures
         if(t.structure) this._structure(ctx,t,px,py,T);
+      }
+    }
+
+    // kingdom territory borders — solid coloured outlines like a political map
+    const bw=2;
+    for(let y=0;y<w.h;y++){
+      for(let x=0;x<w.w;x++){
+        const o=w.tiles[y*w.w+x].owner;
+        if(o<0 || !ownerCol[o]) continue;
+        const px=x*T, py=y*T; ctx.fillStyle=ownerCol[o];
+        const diff=(nx,ny)=>{ const nt=w.get(nx,ny); return !nt || nt.owner!==o; };
+        if(diff(x-1,y)) ctx.fillRect(px,py,bw,T);
+        if(diff(x+1,y)) ctx.fillRect(px+T-bw,py,bw,T);
+        if(diff(x,y-1)) ctx.fillRect(px,py,T,bw);
+        if(diff(x,y+1)) ctx.fillRect(px,py+T-bw,T,bw);
       }
     }
     w.dirty=false;
@@ -2172,7 +2348,28 @@ class Renderer{
       ctx.fillStyle="#413d47"; ctx.fillRect(px+6,py+6,3,3);
     } else if(t.biome===BIOME.DIRT){
       ctx.fillStyle="#5a4530"; ctx.fillRect(px+4,py+7,3,2);
-    } else if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER){
+    } else if(t.biome===BIOME.MOUNTAIN){
+      // rocky peak with a snow cap
+      ctx.fillStyle="#8b8690"; ctx.beginPath(); ctx.moveTo(px+2,py+T-3); ctx.lineTo(px+T/2,py+3); ctx.lineTo(px+T-2,py+T-3); ctx.fill();
+      ctx.fillStyle="#eef2f6"; ctx.beginPath(); ctx.moveTo(px+T/2-2,py+6); ctx.lineTo(px+T/2,py+3); ctx.lineTo(px+T/2+2,py+6); ctx.fill();
+    } else if(t.biome===BIOME.DESERT){
+      ctx.fillStyle="#efe0a0"; ctx.fillRect(px+3,py+9,5,1); ctx.fillRect(px+8,py+6,4,1);
+    } else if(t.biome===BIOME.SAVANNA){
+      ctx.fillStyle="#8c7a2f"; ctx.fillRect(px+((x*3)%(T-3)),py+8,1,3);
+      if(((x*5+y)&7)===0){ ctx.fillStyle="#3f6b2a"; ctx.beginPath(); ctx.arc(px+T/2,py+6,2.4,0,7); ctx.fill(); ctx.fillStyle="#5b3a1e"; ctx.fillRect(px+T/2-0.5,py+7,1,3); }
+    } else if(t.biome===BIOME.JUNGLE){
+      ctx.fillStyle="#1f5427"; ctx.beginPath(); ctx.arc(px+4,py+6,2,0,7); ctx.arc(px+10,py+9,2.2,0,7); ctx.fill();
+    } else if(t.biome===BIOME.TUNDRA){
+      ctx.fillStyle="#c8d2cb"; ctx.fillRect(px+4,py+6,2,2); ctx.fillStyle="#6f7d70"; ctx.fillRect(px+9,py+9,2,1);
+    } else if(t.biome===BIOME.CANDY){
+      const cs=["#ffffff","#ff9ec4","#8ce0ff","#fff07a"];
+      ctx.fillStyle=cs[(x+y)%cs.length]; ctx.fillRect(px+4,py+5,2,2); ctx.fillRect(px+9,py+9,2,2);
+      ctx.fillStyle="#ffd0e6"; ctx.fillRect(px+8,py+4,1,1);
+    } else if(t.biome===BIOME.SWAMP){
+      ctx.fillStyle="#5a6b46"; ctx.fillRect(px+3,py+8,3,1);
+      ctx.fillStyle="#2f3a24"; if(((x+y)&3)===0) ctx.beginPath(),ctx.arc(px+10,py+6,1.6,0,7),ctx.fill();
+    }
+    if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER){
       ctx.fillStyle=this._alpha("#bfe9ff",0.10);
       ctx.fillRect(px+2,py+ (((x+y)&2)?4:9),T-6,1);
     }
@@ -2248,11 +2445,20 @@ class Renderer{
         ctx.fillStyle="#3a2a16"; ctx.fillRect(cx-1,py+9,2,T-12);
         break; }
       case STRUCT.PALACE:{
-        ctx.fillStyle="#9a7a4a"; ctx.fillRect(px+2,py+5,T-4,T-6);
-        ctx.fillStyle="#d9b45c"; // battlements
-        for(let i=0;i<4;i++) ctx.fillRect(px+2+i*3.4,py+3,2,3);
-        ctx.fillStyle="#6a4fae"; ctx.fillRect(cx-1,py+8,3,T-10);      // grand door
-        ctx.fillStyle="#ffcf5c"; ctx.fillRect(cx,py,1,4); ctx.fillRect(cx+1,py,3,2);
+        // a tall blocky high-rise (rises above its tile like a city tower)
+        const bh=T+6;                                   // building height in px
+        ctx.fillStyle="#3b3f47"; ctx.fillRect(px+2,py+T-bh,T-4,bh);       // tower body
+        ctx.fillStyle="#4a4f58"; ctx.fillRect(px+2,py+T-bh,2,bh);         // lit side
+        ctx.fillStyle="#2d3037"; ctx.fillRect(px+T-4,py+T-bh,2,bh);       // shade side
+        // lit windows grid
+        for(let wy=py+T-bh+3; wy<py+T-3; wy+=3){
+          for(let wx=px+4; wx<px+T-4; wx+=3){
+            ctx.fillStyle=((wx+wy+this.frame*0)|0)%7<2?"#ffe08a":"#20242b";
+            ctx.fillRect(wx,wy,1.6,1.6);
+          }
+        }
+        ctx.fillStyle="#8a8f98"; ctx.fillRect(px+4,py+T-bh-2,T-8,2);      // rooftop
+        ctx.fillStyle="#ff5c5c"; ctx.fillRect(cx-0.5,py+T-bh-5,1,3);      // aerial light
         break; }
       case STRUCT.STOREHOUSE:{
         ctx.fillStyle="#6b5334"; ctx.fillRect(px+2,py+5,T-4,T-6);
@@ -2334,6 +2540,10 @@ class Renderer{
 
     // brush cursor
     this._cursor(ctx);
+
+    // planet view — fades in as the camera zooms out, covering the flat map
+    const ga=this.globeAlpha();
+    if(ga>0){ ctx.setTransform(1,0,0,1,0,0); this._globe(ctx,ga); }
   }
 
   _visibleTileBounds(){
@@ -2432,23 +2642,34 @@ class Renderer{
 
   _labels(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
-    if(cam.zoom<0.7) return; // hide labels when very zoomed out
-    ctx.textAlign="center";
-    ctx.font=`${Math.max(7,7/cam.zoom*cam.zoom)}px "Courier New",monospace`;
+    if(cam.zoom<0.45) return;                 // hide labels when seeing the globe
+    ctx.textAlign="left";
+    const sel=this.game.ui.selectedKingdom;
     for(const s of this.game.settlements.list){
       if(s.destroyed)continue;
-      const px=s.cx*T+T/2, py=s.cy*T-8;
-      const label=`${FACTION_META[s.faction].icon} ${s.name}`;
+      const k=s.kingdom;
+      const bx=s.cx*T+T/2, by=s.cy*T;
+      // --- flag/banner pole above the capital ---
+      ctx.fillStyle="#2a2d31"; ctx.fillRect(bx-0.5,by-20,1.4,20);        // pole
+      ctx.fillStyle=k.color;   ctx.fillRect(bx+1,by-20,10,7);            // banner cloth
+      ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(bx+1,by-20,10,1);
+      ctx.fillStyle="#0d0e11"; ctx.font="6px 'Courier New',monospace"; ctx.textAlign="center";
+      ctx.fillText(FACTION_META[k.faction].icon.slice(0,1)||"•",bx+6,by-15);
+      // --- name plate: KINGDOM name + total population (e.g. "Claude 217") ---
+      const label=`${k.name} ${k.pop}`;
       ctx.font="bold 8px 'Courier New',monospace";
-      ctx.fillStyle="rgba(0,0,0,0.55)";
-      const w=ctx.measureText(label).width+6;
-      ctx.fillRect(px-w/2,py-8,w,10);
-      ctx.fillStyle=s.color;
-      ctx.fillText(label,px,py);
-      ctx.fillStyle="rgba(255,255,255,0.6)";
-      ctx.font="7px 'Courier New',monospace";
-      ctx.fillText(`${s.title} · ${s.pop}`,px,py+7);
+      const w=ctx.measureText(label).width+8;
+      const lx=bx-w/2, ly=by-32;
+      ctx.fillStyle= sel===k? "rgba(79,195,247,0.9)":"rgba(15,16,20,0.72)";
+      ctx.fillRect(lx,ly,w,11);
+      ctx.fillStyle=k.color; ctx.fillRect(lx,ly,2,11);                   // banner accent
+      ctx.fillStyle= sel===k? "#08222e":"#e7e9ee";
+      ctx.fillText(label,bx,ly+8);
+      // small crown for the ruling capital
+      ctx.fillStyle="#ffcf5c"; ctx.font="7px 'Courier New',monospace";
+      ctx.fillText("♛",lx-2,ly+8);
     }
+    ctx.textAlign="left";
   }
 
   _effects(ctx){
@@ -2530,13 +2751,104 @@ class Renderer{
 
   _cursor(ctx){
     const g=this.game;
-    if(!g.ui.hoverTile) return;
+    if(!g.ui.hoverTile || this.globeAlpha()>0.5) return;
     const {x,y}=g.ui.hoverTile;
     const T=CONFIG.TILE, r=g.ui.brush;
     ctx.strokeStyle="rgba(255,255,255,0.6)";
     ctx.lineWidth=1.5;
     if(r===0){ ctx.strokeRect(x*T,y*T,T,T); }
     else { ctx.beginPath(); ctx.arc(x*T+T/2,y*T+T/2,(r+0.5)*T,0,7); ctx.stroke(); }
+  }
+
+  /* ---------- PLANET / GLOBE VIEW -------------------------------------------
+     Renders the world as a rotating sphere seen from space (orthographic
+     projection). A per-pixel geometry LUT is built once; each frame only
+     samples biome colours + applies day/night shading, so it stays cheap and
+     only runs while the camera is zoomed far out. -------------------------- */
+  _buildGlobeLUT(){
+    const GS=this.GS, half=GS/2, lut=new Float32Array(GS*GS*4), mask=new Uint8Array(GS*GS);
+    for(let py=0;py<GS;py++){
+      for(let px=0;px<GS;px++){
+        const i=py*GS+px;
+        const nx=(px-half)/half, ny=(py-half)/half, r2=nx*nx+ny*ny;
+        if(r2>1){ mask[i]=0; continue; }
+        mask[i]=1;
+        const z=Math.sqrt(1-r2), nyu=-ny;               // screen y is down
+        lut[i*4  ]=Math.atan2(nx,z);                    // lonBase (front hemisphere)
+        lut[i*4+1]=Math.asin(clamp(nyu,-1,1));          // lat
+        lut[i*4+2]=z;                                    // depth (for shading)
+        // diffuse lighting from an upper-left-front sun
+        const lx=-0.42, ly=0.5, lz=0.76;
+        lut[i*4+3]=Math.max(0, nx*lx + nyu*ly + z*lz);
+      }
+    }
+    const gc=document.createElement("canvas"); gc.width=GS; gc.height=GS;
+    this._globeLUT={lut,mask,buf:this.ctx.createImageData(GS,GS),gc,gctx:gc.getContext("2d")};
+  }
+  _ensureStars(vw,vh){
+    if(this.stars && this.stars.width===vw && this.stars.height===vh) return;
+    const c=document.createElement("canvas"); c.width=vw; c.height=vh;
+    const g=c.getContext("2d"); g.fillStyle="#05060a"; g.fillRect(0,0,vw,vh);
+    for(let i=0;i<vw*vh/900;i++){ const a=0.3+Math.random()*0.7;
+      g.fillStyle=`rgba(255,255,255,${a})`; g.fillRect((Math.random()*vw)|0,(Math.random()*vh)|0,Math.random()<0.15?2:1,1); }
+    this.stars=c;
+  }
+  _globe(ctx,alpha){
+    const vw=this.canvas.width, vh=this.canvas.height, w=this.game.world;
+    if(!this._globeLUT) this._buildGlobeLUT();
+    this._ensureStars(vw,vh);
+    const GS=this.GS, {lut,mask,buf}=this._globeLUT, data=buf.data;
+    this.globeRot += 0.0016;                             // slow, majestic spin
+    const rot=this.globeRot, TAU=Math.PI*2;
+    const W=w.w, H=w.h, tiles=w.tiles;
+    for(let i=0;i<GS*GS;i++){
+      const o=i*4;
+      if(!mask[i]){ data[o+3]=0; continue; }
+      const lon=lut[o]+rot;
+      let col=((lon/TAU+0.5)%1); if(col<0)col+=1;
+      const tx=(col*W)|0;
+      const lat=lut[o+1];
+      let ty=((0.5 - lat/Math.PI)*H)|0; if(ty<0)ty=0; else if(ty>=H)ty=H-1;
+      const t=tiles[ty*W+tx];
+      const rgb=BIOME_RGB[t.biome]||BIOME_RGB[3];
+      // day/night shading (+ a touch of ambient so the night side isn't black)
+      const sh=0.28 + 0.95*lut[o+3];
+      data[o  ]=Math.min(255,rgb[0]*sh);
+      data[o+1]=Math.min(255,rgb[1]*sh);
+      data[o+2]=Math.min(255,rgb[2]*sh);
+      data[o+3]=255;
+    }
+    this._globeLUT.gctx.putImageData(buf,0,0);
+
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    // space + stars behind the planet
+    ctx.drawImage(this.stars,0,0);
+    const cx=vw/2, cy=vh/2, R=Math.min(vw,vh)*0.42;
+    // atmosphere glow
+    const atmo=ctx.createRadialGradient(cx,cy,R*0.9,cx,cy,R*1.18);
+    atmo.addColorStop(0,"rgba(90,170,255,0.0)"); atmo.addColorStop(0.6,"rgba(90,170,255,0.28)"); atmo.addColorStop(1,"rgba(90,170,255,0)");
+    ctx.fillStyle=atmo; ctx.beginPath(); ctx.arc(cx,cy,R*1.18,0,7); ctx.fill();
+    // the planet itself (clipped to a circle)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.clip();
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(this._globeLUT.gc, cx-R, cy-R, R*2, R*2);
+    // limb shadow for a rounder look
+    const limb=ctx.createRadialGradient(cx,cy,R*0.6,cx,cy,R);
+    limb.addColorStop(0,"rgba(0,0,0,0)"); limb.addColorStop(1,"rgba(0,0,20,0.45)");
+    ctx.fillStyle=limb; ctx.fillRect(cx-R,cy-R,R*2,R*2);
+    ctx.restore();
+    // bright rim
+    ctx.strokeStyle="rgba(150,200,255,0.5)"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
+    // caption
+    ctx.globalAlpha=alpha; ctx.fillStyle="rgba(255,255,255,0.85)";
+    ctx.font="bold 13px 'Courier New',monospace"; ctx.textAlign="center";
+    ctx.fillText("🌍 THE WORLD",cx,cy+R+26);
+    ctx.font="9px 'Courier New',monospace"; ctx.fillStyle="rgba(255,255,255,0.5)";
+    ctx.fillText("scroll in to descend to the surface",cx,cy+R+40);
+    ctx.restore();
   }
 }
 
@@ -2572,6 +2884,7 @@ const TOOLS = [
     {id:"farm",  icon:"🌾",name:"Farm", desc:"<b>Farm</b> — produces food on fertile ground."},
     {id:"mine",  icon:"⛏️",name:"Mine", desc:"<b>Mine</b> — extracts stone from rocky terrain."},
     {id:"road",  icon:"🛣️",name:"Road", desc:"<b>Road</b> — links settlements and speeds travel."},
+    {id:"inspect",icon:"🔍",name:"Inspect",desc:"<b>Inspect</b> — click a realm's land to open its kingdom panel (king, families, army, treasury)."},
   ]},
 ];
 
@@ -2585,6 +2898,7 @@ class UIManager{
     this.brush=1;              // radius 0..4
     this.hoverTile=null;
     this.selectedSettlement=null;
+    this.selectedKingdom=null;       // realm shown in the inspector panel
     this._toastTimer=null;
     // culture applied to newly-spawned civilizations
     this.spawnFaction=FACTION.NEUTRAL;
@@ -2686,6 +3000,9 @@ class UIManager{
     document.getElementById("w-blank").addEventListener("click",()=>{ g.reset(); this.hideWelcome(); });
     document.getElementById("w-gen").addEventListener("click",()=>{ g.generateWorld(); this.hideWelcome(); });
 
+    // kingdom inspector close
+    document.getElementById("kp-close").addEventListener("click",()=>this.closeKingdomPanel());
+
     // zoom controls
     document.getElementById("zoom-in").addEventListener("click",()=>this._zoomBy(1.25));
     document.getElementById("zoom-out").addEventListener("click",()=>this._zoomBy(0.8));
@@ -2786,6 +3103,8 @@ class UIManager{
   applyTool(cx,cy){
     const g=this.game, w=g.world;
     if(!w.inBounds(cx,cy)) return;
+    // Inspect: select the realm owning the clicked tile (or the nearest capital)
+    if(this.tool==="inspect"){ this._inspectAt(cx,cy); return; }
     const r=this.brush;
     const single = ["volcano","meteor","quake","lightning","human","orc","elf","monster","mage","industrial","skeleton"].includes(this.tool);
 
@@ -2873,6 +3192,7 @@ class UIManager{
     const pill=document.getElementById("seasonPill");
     pill.textContent=`${g.sim.seasonIcon} ${g.sim.seasonName}`;
     pill.style.background={Spring:"#2c4a2c",Summer:"#4a4322",Autumn:"#4a3322",Winter:"#233a4a"}[g.sim.seasonName];
+    if(this.selectedKingdom) this.renderKingdomPanel();   // live-update inspector
   }
 
   syncControls(){
@@ -2892,9 +3212,54 @@ class UIManager{
     this._toastTimer=setTimeout(()=>el.classList.remove("show"),1600);
   }
 
-  /* onboarding overlay control */
-  showWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.remove("hidden"); }
-  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.toast("Pick a God Power and click the world"); }
+  /* onboarding overlay control — freeze time while the chooser is shown so the
+     blank world stays truly static until the player begins. */
+  showWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.remove("hidden"); this.game.sim.paused=true; this.syncControls(); }
+  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.game.sim.paused=false; this.syncControls(); this.toast("Pick a God Power and click the world"); }
+
+  /* --- kingdom inspector ------------------------------------------------- */
+  _inspectAt(cx,cy){
+    const g=this.game, t=g.world.get(cx,cy);
+    let k=null;
+    if(t && t.owner>=0){ const s=g.settlements.list.find(z=>z.id===t.owner); if(s&&!s.destroyed) k=s.kingdom; }
+    if(!k){ // fall back to nearest capital within a few tiles
+      let bd=8*8; for(const s of g.settlements.list){ if(s.destroyed)continue; const d=dist2(cx,cy,s.cx,s.cy); if(d<bd){bd=d;k=s.kingdom;} }
+    }
+    if(k) this.selectKingdom(k); else { this.selectedKingdom=null; this.closeKingdomPanel(); this.toast("No realm here"); }
+  }
+  selectKingdom(k){
+    this.selectedKingdom=k;
+    document.getElementById("kingdomPanel").classList.remove("hidden");
+    this.renderKingdomPanel();
+    this.renderKingdoms();
+  }
+  closeKingdomPanel(){ this.selectedKingdom=null; document.getElementById("kingdomPanel").classList.add("hidden"); this.renderKingdoms(); }
+  /* Live-refresh the inspector each frame while it's open. */
+  renderKingdomPanel(){
+    const k=this.selectedKingdom; if(!k) return;
+    if(k.destroyed || !k.alive){ this.closeKingdomPanel(); return; }
+    const m=k.metrics, cap=k.capital, fm=FACTION_META[k.faction];
+    document.getElementById("kp-banner").style.background=k.color;
+    document.getElementById("kp-name").textContent=`${fm.icon} ${k.name}`;
+    document.getElementById("kp-sub").textContent=`${k.race} · ${fm.name} Kingdom`;
+    document.getElementById("kp-food").textContent=Math.floor(m.food);
+    document.getElementById("kp-wood").textContent=Math.floor(m.wood);
+    document.getElementById("kp-weap").textContent=m.weapons;
+    const rows=[
+      ["King", cap&&cap.leader?cap.leader.name:"—"],
+      ["Ruler's Money", Math.floor(k.gold)],
+      ["Villages", `${m.villages}/6`],
+      ["Adults", m.adults],
+      ["Children", m.children],
+      ["Families", m.families],
+      ["Happy", m.happy],
+      ["Army", m.military],
+      ["Crime", Math.round(m.crime)+"%"],
+      ["Tech", `${fm.name} T${k.techTier}`],
+      ["Food", Math.floor(m.food)],
+    ];
+    document.getElementById("kp-rows").innerHTML=rows.map(([a,b])=>`<div class="r"><span>${a}</span><b>${b}</b></div>`).join("");
+  }
 
   /* --- right-panel renderers --------------------------------------------- */
   renderChronicle(){
@@ -2917,7 +3282,8 @@ class UIManager{
       const cult=k.culture.map(c=>`${TRAITS[c].icon}`).join("");
       const crime=Math.round(m.crime), homeless=m.homeless;
       const crimeCol=crime>50?"var(--danger)":crime>25?"var(--gold)":"var(--text-dim)";
-      return `<div class="kcard" style="border-left-color:${s.color}">
+      const selCls=this.selectedKingdom===k?" selected":"";
+      return `<div class="kcard${selCls}" data-kid="${k.id}" style="border-left-color:${s.color}">
         <h3>${s.name} <span class="race">· ${s.title}</span></h3>
         <div class="race">${fm.icon} ${k.name} — ${k.race} ${cult}</div>
         <div class="row"><span>👑 ${s.leader?s.leader.name:'—'}</span></div>
@@ -2931,6 +3297,15 @@ class UIManager{
         <div class="kbar"><i style="width:${h}%;background:${hcol}"></i></div>
       </div>`;
     }).join("");
+    // clicking a realm card selects it and flies the camera to its capital
+    host.querySelectorAll(".kcard").forEach(card=>{
+      card.addEventListener("click",()=>{
+        const k=this.game.settlements.kingdoms.find(z=>z.id===+card.dataset.kid);
+        if(!k||!k.alive)return;
+        this.selectKingdom(k);
+        const cap=k.capital; if(cap) this.game.camera.centerOn(cap.cx,cap.cy,this.game.renderer.canvas.width,this.game.renderer.canvas.height);
+      });
+    });
   }
   renderAchievements(){
     const host=document.getElementById("page-achieve");
@@ -2980,7 +3355,8 @@ class Game{
     this.seed=(Math.random()*1e9)|0;
     SETTLE_ID=1; ENTITY_ID=1;
     this.world=new World(CONFIG.W,CONFIG.H);
-    if(mode==="generate") this.world.generate(this.seed);
+    if(mode==="earth") this.world.generateEarth(this.seed);
+    else if(mode==="generate") this.world.generate(this.seed);
     else { setNameRng(makeRNG(this.seed)); this.world.blank(); }
 
     // world-scoped managers are rebuilt so nothing leaks between worlds
@@ -3016,11 +3392,18 @@ class Game{
     this.ui.toast("Cleared to blank canvas");
   }
 
-  /* Generate button -> roll a fresh procedural world (still unpopulated). */
+  /* Generate button -> forge a fresh EARTH (still unpopulated). */
   generateWorld(){
+    this._remake("earth");
+    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+    this.chronicle.log("🌍 The Earth takes shape — continents, oceans and every biome under the sun.","found");
+    this.ui.toast("Earth generated · zoom out to see the planet");
+  }
+  /* The old fantasy split-map (fire vs life), kept for variety. */
+  generateFantasy(){
     this._remake("generate");
-    this.chronicle.log("🌍 A world takes shape: fire and ash to the west, green life to the east.","found");
-    this.ui.toast("Random world generated");
+    this.chronicle.log("🌋 A fantasy world: fire and ash to the west, green life to the east.","found");
+    this.ui.toast("Fantasy world generated");
   }
 
   /* --- world-level per-tick upkeep (regrowth, cooling, seasons) ---------- */
@@ -3116,10 +3499,13 @@ class Game{
     // render
     this.renderer.render();
 
-    // HUD every frame (cheap); heavier panels throttled
+    // HUD every frame (cheap); heavier panels throttled + only when visible
     this.ui.updateHUD();
     this._kingdomsCd-=dt;
-    if(this._kingdomsCd<=0){ this.ui.renderKingdoms(); this._kingdomsCd=1.0; }
+    if(this._kingdomsCd<=0){
+      if(document.getElementById("page-kingdoms").classList.contains("active")) this.ui.renderKingdoms();
+      this._kingdomsCd=1.0;
+    }
 
     requestAnimationFrame(this.loop.bind(this));
   }
