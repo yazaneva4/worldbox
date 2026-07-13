@@ -680,6 +680,18 @@ const TRAITS = {
   industrious:{ name:"Industrious",icon:"⛏️", color:"#ffcf5c",
     desc:"Gather and build far faster; hoard resources.",
     mods:{ gather:+0.8, build:+0.6 }, tags:[], opp:[] },
+  giant:     { name:"Giant",     icon:"🗿", color:"#c9a86a",
+    desc:"Towering, tough bodies — bigger, hardier, deadlier.",
+    mods:{ health:+0.9, military:+0.5, defense:+0.6, reproduce:-0.2 }, tags:["hardy","giant"], opp:[] },
+  swift:     { name:"Swift",     icon:"💨", color:"#8fe0ff",
+    desc:"Fleet-footed — move and gather quickly.",
+    mods:{ speed:+0.7, gather:+0.2 }, tags:[], opp:[] },
+  zealot:    { name:"Zealot",    icon:"🔥", color:"#ff8a5c",
+    desc:"Fervent warriors, happiest at war.",
+    mods:{ aggression:+0.6, military:+0.5, happiness:+0.2, research:-0.3 }, tags:["raid_happy"], opp:["pacifist"] },
+  clever:    { name:"Clever",    icon:"📚", color:"#a0d8ff",
+    desc:"Quick learners who research a little faster.",
+    mods:{ research:+0.5, build:+0.2 }, tags:[], opp:[] },
 };
 const TRAIT_IDS = Object.keys(TRAITS);
 const EMPTY_TRAITS = Object.freeze([]);   // shared empty result (avoids per-tick alloc)
@@ -713,6 +725,23 @@ const TECH_TREE = {
     { id:"crafts",     name:"Craftsmanship", cost:60,  unlocks:["storehouse","mine","watchtower","barracks"] },
   ],
 };
+
+/* ---- CREATURE APPEARANCE ("skins") --------------------------------------
+   Each creature is given a persistent look (skin tone, hair colour & style,
+   optional beard) so a crowd looks like real, varied people rather than
+   identical dots. Clothing stays the kingdom's banner colour so realms remain
+   readable. Palettes are race-appropriate. */
+const SKIN_TONES = {
+  [RACE.HUMAN]:   ["#f2cda3","#e8b78c","#d69a6e","#c07f52","#9c6238","#7a4a2c"],
+  [RACE.ELF]:     ["#eae0cf","#dfeecb","#e6dcc4","#d8e8d0"],
+  [RACE.ORC]:     ["#7ea84a","#6f9a3e","#8fb85a","#5f8a34","#94a84f"],
+  [RACE.SKELETON]:["#e7e2d2","#dcd6c4","#cfc8b0"],
+  [RACE.MONSTER]: ["#8a3fb0","#7a35a0","#983fb8","#6f2f96"],
+};
+const HAIR_COLORS = ["#241a12","#3a2a1a","#5a3a1e","#7a4e24","#a9762f","#d9b45c","#a8371f","#7a7a7a","#e6e6e6"];
+const HAIR_STYLES = ["short","long","bald","mohawk","tuft"];  // small silhouette variety
+// deterministic per-entity hash → stable appearance
+function hashId(id){ let h=(id*2654435761)>>>0; h^=h>>>15; h=(h*0x27d4eb2d)>>>0; return h>>>0; }
 
 /* Structure catalog: single source of truth. `sid` maps to the STRUCT enum
    stored on tiles; `cost` is resources; `up` is the upgrade target (housing
@@ -1048,19 +1077,32 @@ class Entity{
     this.allyKing  = null;             // kingdom id a summoned unit fights for (skeletons)
     this.decay     = 0;                // undead slow decay accumulator
 
+    // --- persistent appearance ("skin") so crowds look like varied people ---
+    const hh=hashId(this.id);
+    const tones=SKIN_TONES[race]||SKIN_TONES[RACE.HUMAN];
+    this.skinCol  = tones[hh%tones.length];
+    this.hairCol  = HAIR_COLORS[(hh>>4)%HAIR_COLORS.length];
+    this.hairStyle= HAIR_STYLES[(hh>>8)%HAIR_STYLES.length];
+    this.beard    = (race===RACE.HUMAN||race===RACE.ORC) && ((hh>>12)&3)===0;
+    this.sizeMul  = 1;                  // scaled up by the Giant trait
+    this._effCache= null;              // cached effective-traits array
+
     // undead don't hunger and can't reproduce
-    if(race===RACE.SKELETON){ this.maxAge = 9999; this.hunger = 0; this.attack = 10; }
+    if(race===RACE.SKELETON){ this.maxAge = 9999; this.hunger = 0; this.attack = 10; this.beard=false; }
   }
 
-  // Effective traits = personal + home kingdom's shared culture.
+  // Effective traits = personal + home kingdom's shared culture. Cached, since
+  // traits & culture are stable per creature (invalidated on settlement change).
   get kingdom(){ return this.settlement ? this.settlement.kingdom : null; }
   effTraits(){
-    const k=this.kingdom;
-    // fast path: no personal traits and no realm culture → shared empty array
-    if(this.traits.length===0 && (!k || k.culture.length===0)) return EMPTY_TRAITS;
-    if(!k || k.culture.length===0) return this.traits;
-    return [...new Set([...this.traits, ...k.culture])];
+    if(this._effCache) return this._effCache;
+    const k=this.kingdom; let r;
+    if(this.traits.length===0 && (!k || k.culture.length===0)) r=EMPTY_TRAITS;
+    else if(!k || k.culture.length===0) r=this.traits;
+    else r=[...new Set([...this.traits, ...k.culture])];
+    this._effCache=r; return r;
   }
+  invalidateTraits(){ this._effCache=null; }
   mod(channel){ return traitMod(this.effTraits(), channel); }   // additive modifier
   has(tag){ return traitHas(this.effTraits(), tag); }
 }
@@ -1654,7 +1696,10 @@ class EntityManager{
     const gx=e.tx+0.5, gy=e.ty+0.5;
     const dx=gx-e.x, dy=gy-e.y;
     const d=Math.hypot(dx,dy);
-    const step=(e.speed*0.9)/CONFIG.BASE_TPS; // tiles per tick baseline
+    // Swift trait speeds movement; on roads everyone travels faster
+    const onRoad = (w.get(e.x|0,e.y|0)||0).structure===STRUCT.ROAD;
+    const spd=e.speed*(1+Math.max(0,e.mod("speed")))*(onRoad?1.5:1);
+    const step=(spd*0.9)/CONFIG.BASE_TPS;     // tiles per tick baseline
     if(d<=step){ e.x=gx; e.y=gy; return; }
     let nx=e.x+dx/d*step, ny=e.y+dy/d*step;
     const t=w.get(nx|0,ny|0);
@@ -1753,7 +1798,7 @@ class SettlementManager{
     e.settlement=s;
     e.faction=s.kingdom.faction;                // adopt the realm's path
     if(e.role!=="leader") e.role="civilian";
-    e.job="idle";
+    e.job="idle"; e.invalidateTraits();          // culture may differ now
     s.members.push(e);
   }
 
@@ -1795,7 +1840,7 @@ class SettlementManager{
     const k=s.kingdom;
     this.game.chronicle.log(`💀 <b>${s.name}</b> has fallen. The ${k.name} loses a holding.`,"war");
     this.game.chronicle.achieve("first_fall","💀","Ozymandias","A kingdom crumbles into ruin.");
-    for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.role="civilian"; m.job="idle"; }
+    for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.role="civilian"; m.job="idle"; m.invalidateTraits(); }
     s.members.length=0;
     const w=this.game.world;
     for(const idx of s.territory){ if(w.tiles[idx].owner===s.id){ w.tiles[idx].owner=-1; w.markDirty(idx%w.w,(idx/w.w)|0); } }
@@ -2008,7 +2053,29 @@ class SettlementManager{
     this.claimAround(s,spot.x,spot.y,1);
     this._recount(s);
     this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
-    w.markDirty(spot.x,spot.y); return true;
+    w.markDirty(spot.x,spot.y);
+    // lay a paved road from the new building back to the town centre so towns
+    // grow a real street network (skip farms/mines to avoid clutter)
+    if(key!=="farm" && key!=="mine") this._roadLine(s.cx,s.cy,spot.x,spot.y);
+    return true;
+  }
+
+  /* Lay ROAD tiles along a line between two points (Bresenham), stepping over
+     water, resources and existing structures. Shared by town streets & trade. */
+  _roadLine(x0,y0,x1,y1){
+    const w=this.game.world;
+    const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0);
+    const sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx-dy, guard=0;
+    while(guard++<260){
+      const t=w.get(x0,y0);
+      if(t && t.walkable && t.structure===STRUCT.NONE && t.resource!==RES.TREE){
+        t.structure=STRUCT.ROAD; t.health=200; w.markDirty(x0,y0);
+      }
+      if(x0===x1&&y0===y1)break;
+      const e2=2*err;
+      if(e2>-dy){err-=dy;x0+=sx;}
+      if(e2<dx){err+=dx;y0+=sy;}
+    }
   }
 
   _findOwnedTile(s,sid){
@@ -2101,24 +2168,8 @@ class SettlementManager{
 
   activeKingdoms(){ return this.kingdoms.filter(k=>k.alive).length; }
 
-  _buildRoad(a,b){
-    const w=this.game.world;
-    // Bresenham line of road tiles connecting town centres (skip water).
-    let x0=a.cx,y0=a.cy,x1=b.cx,y1=b.cy;
-    const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0);
-    const sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx-dy;
-    let guard=0;
-    while(guard++<200){
-      const t=w.get(x0,y0);
-      if(t && t.walkable && t.structure===STRUCT.NONE && t.resource!==RES.TREE){
-        t.structure=STRUCT.ROAD; t.health=200; w.markDirty(x0,y0);
-      }
-      if(x0===x1&&y0===y1)break;
-      const e2=2*err;
-      if(e2>-dy){err-=dy;x0+=sx;}
-      if(e2<dx){err+=dx;y0+=sy;}
-    }
-  }
+  // A highway between two town centres (trade route).
+  _buildRoad(a,b){ this._roadLine(a.cx,a.cy,b.cx,b.cy); }
 
   activeCount(){ return this.list.filter(s=>!s.destroyed).length; }
 }
@@ -2375,7 +2426,7 @@ class Renderer{
     if(oc){ ctx.fillStyle=this._alpha(oc,0.14); ctx.fillRect(px,py,T,T); }
     this._tileDetail(ctx,t,px,py,T,x,y);
     if(t.resource) this._resource(ctx,t,px,py,T);
-    if(t.structure) this._structure(ctx,t,px,py,T);
+    if(t.structure) this._structure(ctx,t,px,py,T,x,y);
     // kingdom border edges
     if(oc){
       const o=t.owner, bw=2; ctx.fillStyle=oc;
@@ -2485,12 +2536,26 @@ class Renderer{
     }
   }
 
-  _structure(ctx,t,px,py,T){
+  _structure(ctx,t,px,py,T,x,y){
     const cx=px+T/2, cy=py+T/2;
     switch(t.structure){
       case STRUCT.ROAD:{
-        ctx.fillStyle="#8a7a5a"; ctx.fillRect(px+2,py+2,T-4,T-4);
-        ctx.fillStyle="#79694c"; ctx.fillRect(px+4,py+6,2,2); ctx.fillRect(px+9,py+4,2,2);
+        // A real connected road: a cobble hub that extends a paved arm toward
+        // every neighbouring road or building, forming a proper path network.
+        const w=this.game.world;
+        const link=(nx,ny)=>{ const nt=w.get(nx,ny); return nt && nt.structure!==STRUCT.NONE && nt.structure!==STRUCT.RUIN; };
+        const base="#9a8968", edge="#7c6c4d";
+        const hw=5;                                  // half-width of the paving
+        ctx.fillStyle=base; ctx.fillRect(cx-hw/2,cy-hw/2,hw,hw);         // central hub
+        // arms toward connected neighbours
+        if(link(x-1,y)) ctx.fillRect(px,cy-hw/2,cx-px,hw);
+        if(link(x+1,y)) ctx.fillRect(cx,cy-hw/2,px+T-cx,hw);
+        if(link(x,y-1)) ctx.fillRect(cx-hw/2,py,hw,cy-py);
+        if(link(x,y+1)) ctx.fillRect(cx-hw/2,cy,hw,py+T-cy);
+        // isolated road tile → a short stub so it still reads as a path
+        if(!(link(x-1,y)||link(x+1,y)||link(x,y-1)||link(x,y+1))) ctx.fillRect(px+3,py+3,T-6,T-6);
+        // cobble speckle
+        ctx.fillStyle=edge; ctx.fillRect(px+4,py+7,1.4,1.4); ctx.fillRect(px+9,py+5,1.4,1.4); ctx.fillRect(px+6,py+10,1.4,1.4);
         break; }
       case STRUCT.HOUSE:{
         ctx.fillStyle="#7a5230"; ctx.fillRect(px+3,py+7,T-6,T-9);      // walls
@@ -2696,60 +2761,74 @@ class Renderer{
     }
   }
 
-  _skin(e){
-    if(e.race===RACE.ORC) return "#7ea84a";
-    if(e.race===RACE.SKELETON) return e.allyKing?"#eef0e6":"#d8d2c0";
-    if(e.race===RACE.MONSTER) return "#8a3fb0";
-    if(e.race===RACE.ELF) return "#dfeecb";
-    return "#e8b78c"; // human skin
-  }
-  /* A chunky WorldBox-style pixel humanoid: big head, blocky torso, arms out,
-     little legs. Colour comes from the kingdom banner / race. */
+  /* A chunky WorldBox-style pixel humanoid rendered from the creature's own
+     persistent appearance (skin tone, hair colour/style, beard). Clothing is
+     the kingdom banner colour so realms stay readable in a crowd. */
   _drawChar(ctx,e,px,py){
-    const cloth=this._raceColor(e), skin=this._skin(e);
-    const dark="#3a2c1e";
+    const cloth=this._raceColor(e), skin=e.skinCol, hair=e.hairCol;
+    const m=(e.has("giant")?1.5:1)*(e.sizeMul||1); // Giants render larger
+    const S=(v)=>v*m;                               // scale helper
+    const dark="#332417";
     // ground shadow
-    ctx.fillStyle="rgba(0,0,0,0.22)"; ctx.beginPath(); ctx.ellipse(px,py+0.5,3,1.3,0,0,7); ctx.fill();
+    ctx.fillStyle="rgba(0,0,0,0.22)"; ctx.beginPath(); ctx.ellipse(px,py+0.5,S(3),S(1.3),0,0,7); ctx.fill();
     if(e.race===RACE.MONSTER){
       // a lumpy beast rather than a humanoid
-      ctx.fillStyle=cloth; ctx.beginPath(); ctx.ellipse(px,py-3,4.4,3.6,0,0,7); ctx.fill();
-      ctx.fillStyle="#2a0f38"; ctx.fillRect(px-2,py-4,1.4,1.4); ctx.fillRect(px+0.8,py-4,1.4,1.4); // eyes
-      ctx.fillStyle=this._shade(cloth,0.7); ctx.fillRect(px-3.5,py-6,1.4,2); ctx.fillRect(px+2.1,py-6,1.4,2); // horns
+      ctx.fillStyle=cloth; ctx.beginPath(); ctx.ellipse(px,py-S(3),S(4.4),S(3.6),0,0,7); ctx.fill();
+      ctx.fillStyle=this._shade(cloth,1.2); ctx.beginPath(); ctx.ellipse(px-S(1.2),py-S(4),S(1.4),S(1),0,0,7); ctx.fill();
+      ctx.fillStyle="#2a0f38"; ctx.fillRect(px-S(2),py-S(4),S(1.4),S(1.4)); ctx.fillRect(px+S(0.8),py-S(4),S(1.4),S(1.4)); // eyes
+      ctx.fillStyle="#fff"; ctx.fillRect(px-S(1.6),py-S(2),S(1),S(0.8)); ctx.fillRect(px+S(0.6),py-S(2),S(1),S(0.8));     // fangs
+      ctx.fillStyle=this._shade(cloth,0.7); ctx.fillRect(px-S(3.5),py-S(6),S(1.4),S(2)); ctx.fillRect(px+S(2.1),py-S(6),S(1.4),S(2)); // horns
       return;
     }
     // legs
-    ctx.fillStyle=dark; ctx.fillRect(px-2,py-2.4,1.5,2.4); ctx.fillRect(px+0.5,py-2.4,1.5,2.4);
-    // torso (clothing)
-    ctx.fillStyle=cloth; ctx.fillRect(px-2.6,py-7,5.2,4.8);
-    ctx.fillStyle=this._shade(cloth,0.8); ctx.fillRect(px-2.6,py-3.4,5.2,1); // torso shade
+    ctx.fillStyle=dark; ctx.fillRect(px-S(2),py-S(2.4),S(1.5),S(2.4)); ctx.fillRect(px+S(0.5),py-S(2.4),S(1.5),S(2.4));
+    // torso (clothing) + belt
+    ctx.fillStyle=cloth; ctx.fillRect(px-S(2.6),py-S(7),S(5.2),S(4.8));
+    ctx.fillStyle=this._shade(cloth,1.18); ctx.fillRect(px-S(2.6),py-S(7),S(5.2),S(1)); // highlight
+    ctx.fillStyle=this._shade(cloth,0.7);  ctx.fillRect(px-S(2.6),py-S(3.4),S(5.2),S(1)); // belt/shade
     // arms (skin) out to the sides
-    ctx.fillStyle=skin; ctx.fillRect(px-4.2,py-6.6,1.7,2.6); ctx.fillRect(px+2.5,py-6.6,1.7,2.6);
+    ctx.fillStyle=skin; ctx.fillRect(px-S(4.2),py-S(6.6),S(1.7),S(2.6)); ctx.fillRect(px+S(2.5),py-S(6.6),S(1.7),S(2.6));
     // head
-    ctx.fillStyle=skin; ctx.fillRect(px-2.3,py-11.5,4.6,4.6);
-    // hair / hat by role & race
-    if(e.role==="mage"){
-      ctx.fillStyle="#6a4fae"; ctx.beginPath(); ctx.moveTo(px-3,py-10.8); ctx.lineTo(px,py-15.5); ctx.lineTo(px+3,py-10.8); ctx.fill(); // wizard hat
-      ctx.fillStyle="#ffd94f"; ctx.fillRect(px-0.6,py-13,1.2,1.2);
-    } else if(e.race===RACE.SKELETON){
-      ctx.fillStyle="#c9c3b0"; ctx.fillRect(px-1.4,py-10,1,1); ctx.fillRect(px+0.5,py-10,1,1); // eye sockets
-      ctx.fillStyle="#8a857a"; ctx.fillRect(px-2.4,py-3.2,4.8,0.9);                            // ribs
+    ctx.fillStyle=skin; ctx.fillRect(px-S(2.3),py-S(11.5),S(4.6),S(4.6));
+    ctx.fillStyle=this._shade(skin,0.82); ctx.fillRect(px+S(1.4),py-S(11.5),S(0.9),S(4.6)); // cheek shade
+
+    if(e.race===RACE.SKELETON){
+      ctx.fillStyle="#3a352c"; ctx.fillRect(px-S(1.4),py-S(10),S(1),S(1.1)); ctx.fillRect(px+S(0.5),py-S(10),S(1),S(1.1)); // eye sockets
+      ctx.fillStyle="#8a857a"; ctx.fillRect(px-S(2.4),py-S(3.2),S(4.8),S(0.9));                                          // ribs
+      ctx.fillStyle="#2a2620"; ctx.fillRect(px-S(1),py-S(8),S(2),S(0.7));                                                // jaw line
     } else {
-      // hair
-      ctx.fillStyle= e.race===RACE.ORC?"#3d5220":"#3a2c1e";
-      ctx.fillRect(px-2.4,py-11.8,4.8,2);
-      if(e.race===RACE.ORC){ ctx.fillStyle="#e8e2c0"; ctx.fillRect(px-2.6,py-7.6,0.9,1.2); ctx.fillRect(px+1.7,py-7.6,0.9,1.2); } // tusks
+      // ---- hair by style + colour (skip if wearing a hat/crown) ----
+      const hasHat = e.role==="mage";
+      if(!hasHat){
+        ctx.fillStyle=hair;
+        switch(e.hairStyle){
+          case "bald": break;
+          case "long":  ctx.fillRect(px-S(2.6),py-S(12),S(5.2),S(2.4)); ctx.fillRect(px-S(2.6),py-S(11),S(1),S(3)); ctx.fillRect(px+S(1.6),py-S(11),S(1),S(3)); break;
+          case "mohawk":ctx.fillRect(px-S(0.6),py-S(13),S(1.2),S(2.6)); break;
+          case "tuft":  ctx.fillRect(px-S(1),py-S(12.6),S(2),S(1.6)); break;
+          default:      ctx.fillRect(px-S(2.4),py-S(12),S(4.8),S(1.9)); // short
+        }
+      }
+      if(e.beard){ ctx.fillStyle=hair; ctx.fillRect(px-S(1.8),py-S(8.2),S(3.6),S(1.6)); }
+      if(e.race===RACE.ORC){ ctx.fillStyle="#eef0d6"; ctx.fillRect(px-S(2.6),py-S(7.6),S(0.9),S(1.3)); ctx.fillRect(px+S(1.7),py-S(7.6),S(0.9),S(1.3)); } // tusks
+      if(e.race===RACE.ELF){ ctx.fillStyle=skin; ctx.fillRect(px-S(3),py-S(10),S(0.9),S(1.6)); ctx.fillRect(px+S(2.1),py-S(10),S(0.9),S(1.6)); } // pointed ears
+      // eyes
+      ctx.fillStyle="#2a2018"; ctx.fillRect(px-S(1.2),py-S(9.4),S(0.9),S(1)); ctx.fillRect(px+S(0.4),py-S(9.4),S(0.9),S(1));
     }
-    // eyes
-    if(e.race!==RACE.SKELETON){ ctx.fillStyle="#2a2018"; ctx.fillRect(px-1.2,py-9.4,0.9,1); ctx.fillRect(px+0.4,py-9.4,0.9,1); }
+    // mage hat
+    if(e.role==="mage"){
+      ctx.fillStyle="#6a4fae"; ctx.beginPath(); ctx.moveTo(px-S(3),py-S(10.8)); ctx.lineTo(px,py-S(15.5)); ctx.lineTo(px+S(3),py-S(10.8)); ctx.fill();
+      ctx.fillStyle="#ffd94f"; ctx.fillRect(px-S(0.6),py-S(13),S(1.2),S(1.2));
+    }
     // leader crown
-    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-2.4,py-13.4,4.8,1.6); ctx.fillRect(px-2.4,py-14.6,1,1.4); ctx.fillRect(px-0.5,py-14.6,1,1.4); ctx.fillRect(px+1.4,py-14.6,1,1.4); }
+    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-S(2.4),py-S(13.4),S(4.8),S(1.6)); ctx.fillRect(px-S(2.4),py-S(14.6),S(1),S(1.4)); ctx.fillRect(px-S(0.5),py-S(14.6),S(1),S(1.4)); ctx.fillRect(px+S(1.4),py-S(14.6),S(1),S(1.4)); }
     // weapons
     if(e.role==="soldier"){
-      if(e.equipment==="musket"){ ctx.strokeStyle="#4a3a24"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(px+4,py-3); ctx.lineTo(px+4,py-9); ctx.stroke(); ctx.fillStyle="#2a2018"; ctx.fillRect(px+3.4,py-9.5,1.4,1.4); }
-      else { ctx.strokeStyle="#c9ccd2"; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(px+4,py-2); ctx.lineTo(px+4,py-8.5); ctx.stroke(); ctx.fillStyle="#8a6f3a"; ctx.fillRect(px+3,py-4,2,1.2); }
+      if(e.equipment==="musket"){ ctx.strokeStyle="#4a3a24"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(px+S(4),py-S(3)); ctx.lineTo(px+S(4),py-S(9)); ctx.stroke(); ctx.fillStyle="#2a2018"; ctx.fillRect(px+S(3.4),py-S(9.5),S(1.4),S(1.4)); }
+      else { ctx.strokeStyle="#c9ccd2"; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(px+S(4),py-S(2)); ctx.lineTo(px+S(4),py-S(8.5)); ctx.stroke(); ctx.fillStyle="#8a6f3a"; ctx.fillRect(px+S(3),py-S(4),S(2),S(1.2)); }
     }
     // low-hp flash
-    if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.45)"; ctx.fillRect(px-2.6,py-11.5,5.2,11.5); }
+    if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.45)"; ctx.fillRect(px-S(2.6),py-S(11.5),S(5.2),S(11.5)); }
   }
 
   _raceColor(e){
@@ -2769,29 +2848,30 @@ class Renderer{
 
   _labels(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
-    if(cam.zoom<0.45) return;                 // hide labels when seeing the globe
+    if(cam.zoom<0.4) return;                    // very zoomed out → globe handles it
     const camx=cam.x, camy=cam.y, vw=this.canvas.width/cam.zoom, vh=this.canvas.height/cam.zoom;
     const sel=this.game.ui.selectedKingdom;
-    ctx.font="bold 8px 'Courier New',monospace";
-    for(const s of this.game.settlements.list){
+    // Keep banners a roughly constant on-screen size so realm names stay
+    // legible even zoomed out; show only the major realms when far out.
+    const sc=clamp(0.62/cam.zoom,1,2.8);
+    const showAll = cam.zoom>=0.72;
+    let arr=this.game.settlements.list;
+    if(!showAll) arr=arr.filter(s=>!s.destroyed).sort((a,b)=>b.kingdom.pop-a.kingdom.pop).slice(0,16);
+    ctx.font=`bold ${(8*sc)|0}px 'Courier New',monospace`;
+    for(const s of arr){
       if(s.destroyed)continue;
       const bx=s.cx*T+T/2, by=s.cy*T;
-      // cull off-screen banners — the big win with hundreds of realms
-      if(bx<camx-20||by<camy-40||bx>camx+vw+20||by>camy+vh) continue;
+      if(bx<camx-40*sc||by<camy-46*sc||bx>camx+vw+40*sc||by>camy+vh) continue;   // cull
       const k=s.kingdom;
-      // --- flag/banner pole above the capital ---
-      ctx.fillStyle="#2a2d31"; ctx.fillRect(bx-0.5,by-20,1.4,20);        // pole
-      ctx.fillStyle=k.color;   ctx.fillRect(bx+1,by-20,10,7);            // banner cloth
-      ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(bx+1,by-20,10,1);
-      // --- name plate: KINGDOM name + total population (monospace width est.) ---
+      ctx.fillStyle="#2a2d31"; ctx.fillRect(bx-0.5*sc,by-20*sc,1.4*sc,20*sc);     // pole
+      ctx.fillStyle=k.color;   ctx.fillRect(bx+1*sc,by-20*sc,10*sc,7*sc);         // banner
       const label=`${k.name} ${k.pop}`;
-      const w=label.length*4.9+8;
-      const lx=bx-w/2, ly=by-32;
-      ctx.fillStyle= sel===k? "rgba(79,195,247,0.92)":"rgba(15,16,20,0.72)";
-      ctx.fillRect(lx,ly,w,11);
-      ctx.fillStyle=k.color; ctx.fillRect(lx,ly,2,11);                   // banner accent
+      const w=label.length*4.9*sc+8*sc, lx=bx-w/2, ly=by-32*sc;
+      ctx.fillStyle= sel===k? "rgba(79,195,247,0.92)":"rgba(15,16,20,0.75)";
+      ctx.fillRect(lx,ly,w,11*sc);
+      ctx.fillStyle=k.color; ctx.fillRect(lx,ly,2*sc,11*sc);
       ctx.fillStyle= sel===k? "#08222e":"#e7e9ee"; ctx.textAlign="center";
-      ctx.fillText(label,bx,ly+8);
+      ctx.fillText(label,bx,ly+8*sc);
     }
     ctx.textAlign="left";
   }
@@ -2925,6 +3005,7 @@ class Renderer{
     this.globeRot += 0.0016;                             // slow, majestic spin
     const rot=this.globeRot, TAU=Math.PI*2;
     const W=w.w, H=w.h, tiles=w.tiles;
+    const ownerRGB=this._globeOwnerRGB();               // kingdom colours, for territory tint
     for(let i=0;i<GS*GS;i++){
       const o=i*4;
       if(!mask[i]){ data[o+3]=0; continue; }
@@ -2935,11 +3016,14 @@ class Renderer{
       let ty=((0.5 - lat/Math.PI)*H)|0; if(ty<0)ty=0; else if(ty>=H)ty=H-1;
       const t=tiles[ty*W+tx];
       const rgb=BIOME_RGB[t.biome]||BIOME_RGB[3];
-      // day/night shading (+ a touch of ambient so the night side isn't black)
-      const sh=0.28 + 0.95*lut[o+3];
-      data[o  ]=Math.min(255,rgb[0]*sh);
-      data[o+1]=Math.min(255,rgb[1]*sh);
-      data[o+2]=Math.min(255,rgb[2]*sh);
+      let r0=rgb[0],g0=rgb[1],b0=rgb[2];
+      // paint kingdom territories over the surface so realms are visible from space
+      const own = t.owner>=0 ? ownerRGB[t.owner] : null;
+      if(own){ r0=r0*0.38+own[0]*0.62; g0=g0*0.38+own[1]*0.62; b0=b0*0.38+own[2]*0.62; }
+      const sh=0.28 + 0.95*lut[o+3];                    // day/night shading
+      data[o  ]=Math.min(255,r0*sh);
+      data[o+1]=Math.min(255,g0*sh);
+      data[o+2]=Math.min(255,b0*sh);
       data[o+3]=255;
     }
     this._globeLUT.gctx.putImageData(buf,0,0);
@@ -2972,7 +3056,29 @@ class Renderer{
     ctx.fillText("🌍 THE WORLD",cx,cy+R+26);
     ctx.font="9px 'Courier New',monospace"; ctx.fillStyle="rgba(255,255,255,0.5)";
     ctx.fillText("scroll in to descend to the surface",cx,cy+R+40);
+    // --- great powers legend: the largest realms, visible from orbit ---
+    const realms=this.game.settlements.kingdoms.filter(k=>k.alive).sort((a,b)=>b.pop-a.pop).slice(0,8);
+    if(realms.length){
+      ctx.textAlign="left";
+      ctx.font="bold 11px 'Courier New',monospace";
+      ctx.fillStyle="rgba(255,255,255,0.85)"; ctx.fillText("GREAT POWERS",16,26);
+      ctx.font="10px 'Courier New',monospace";
+      realms.forEach((k,i)=>{
+        const yy=42+i*16;
+        ctx.fillStyle=k.color; ctx.fillRect(16,yy-8,9,9);
+        ctx.fillStyle="rgba(255,255,255,0.9)";
+        ctx.fillText(`${k.name}  ${k.pop}`,30,yy);
+      });
+    }
     ctx.restore();
+  }
+
+  /* Kingdom id → parsed RGB, for tinting territories on the globe. */
+  _globeOwnerRGB(){
+    const m={};
+    for(const s of this.game.settlements.list){ if(s.destroyed)continue;
+      const n=parseInt(s.color.slice(1),16); m[s.id]=[(n>>16)&255,(n>>8)&255,n&255]; }
+    return m;
   }
 }
 
@@ -3318,7 +3424,7 @@ class UIManager{
     const g=this.game, n=1+this.brush;
     for(let i=0;i<n;i++){
       const e=g.entities.spawn(race, x+(Math.random()-.5)*(this.brush+1), y+(Math.random()-.5)*(this.brush+1));
-      if(e){ e.faction=faction; e.traits=[...this.spawnTraits]; }
+      if(e){ e.faction=faction; e.traits=[...this.spawnTraits]; e.invalidateTraits(); }
     }
   }
 
