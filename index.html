@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Pixel God Simulator — Sandbox Civilization Engine</title>
 <style>
 /* ============================================================================
@@ -215,7 +215,7 @@ body{
   overflow:hidden;
   box-shadow:var(--shadow);
 }
-#world{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:crosshair}
+#world{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:crosshair;touch-action:none}
 
 /* floating zoom controls */
 #zoomctrl{
@@ -374,6 +374,51 @@ body{
 @media(max-width:1100px){
   #app{grid-template-columns:180px 1fr 210px}
 }
+
+/* ====================  MOBILE / TOUCH LAYOUT  ============================ */
+.m-toggle{ display:none; }
+#m-scrim{ display:none; }
+@media(max-width:860px){
+  #app{
+    grid-template-columns:1fr;
+    grid-template-rows:44px 1fr;
+    grid-template-areas:"top" "center";
+    gap:3px; padding:3px;
+  }
+  /* side panels become slide-over drawers */
+  #leftpanel,#rightpanel{
+    position:fixed; top:0; bottom:0; z-index:40; width:80%; max-width:330px;
+    transition:transform .25s ease; border-radius:0;
+  }
+  #leftpanel{ left:0; transform:translateX(-102%); }
+  #leftpanel.open{ transform:translateX(0); }
+  #rightpanel{ right:0; transform:translateX(102%); }
+  #rightpanel.open{ transform:translateX(0); }
+  #m-scrim{ position:fixed; inset:0; z-index:35; background:rgba(0,0,0,.5); }
+  #m-scrim.show{ display:block; }
+  /* floating round toggles */
+  .m-toggle{
+    display:flex; align-items:center; justify-content:center;
+    position:absolute; bottom:14px; z-index:32; width:48px; height:48px;
+    font-size:22px; border-radius:50%; border:2px solid var(--border);
+    background:var(--panel); color:var(--text); box-shadow:0 3px 10px rgba(0,0,0,.5);
+  }
+  .m-toggle:active{ transform:scale(.92); }
+  #m-powers{ left:12px; }
+  #m-realms{ right:12px; }
+  /* denser top bar that can scroll if needed */
+  #topbar{ padding:0 5px; gap:4px; overflow-x:auto; }
+  .stat{ padding:3px 6px; font-size:11px; }
+  .ctrlbtn{ padding:5px 7px; }
+  #zoomctrl button{ width:42px; height:42px; font-size:18px; }
+  #hint{ display:none; }
+  .tool{ padding:9px 3px; }        /* bigger touch targets */
+  .tool .ti{ font-size:20px; }
+  #kingdomPanel{ bottom:70px; }
+}
+@media(max-width:520px){
+  .stat.food,.stat:nth-child(5){ display:none; }  /* trim the busiest stats */
+}
 </style>
 </head>
 <body>
@@ -422,6 +467,11 @@ body{
     </div>
     <div id="hint">Blank canvas — paint terrain &amp; place life · Middle-drag pan · Scroll zoom</div>
     <div id="toast"></div>
+
+    <!-- mobile drawer toggles (hidden on desktop) -->
+    <button class="m-toggle" id="m-powers" title="God Powers">⚡</button>
+    <button class="m-toggle" id="m-realms" title="Realms &amp; Chronicle">📜</button>
+    <div id="m-scrim"></div>
 
     <!-- Kingdom inspector: opens when a realm is clicked (Inspect tool) or a
          Realms card is selected. Mirrors the WorldBox kingdom panel. -->
@@ -504,12 +554,16 @@ body{
    0.  CONFIGURATION & SMALL UTILITIES
    -------------------------------------------------------------------------- */
 const CONFIG = {
-  W: 90,               // world width  in tiles (>= 80)
-  H: 54,               // world height in tiles (>= 50)
+  W: 160,              // world width  in tiles (a big, real-Earth map)
+  H: 80,               // world height in tiles (2:1 world aspect)
   TILE: 16,            // pixel size of a tile on the offscreen terrain canvas
   TICKS_PER_YEAR: 48,  // simulation ticks that make up one in-world year
   BASE_TPS: 6,         // simulation ticks per second at speed x1
-  MAX_ENTITIES: 340,   // hard cap to protect the frame budget
+  // Population ceiling. The world can never literally hold this many (it is
+  // limited by land, food, housing and a live FPS guard), but the cap is set
+  // sky-high so population only ever bumps into the world's carrying capacity.
+  MAX_ENTITIES: 50000000,
+  MIN_FPS: 26,         // below this the FPS guard pauses new births/spawns
 };
 
 /* Deterministic-ish PRNG (mulberry32) so a "seed" produces a repeatable world */
@@ -749,11 +803,20 @@ class World{
     this.w=w; this.h=h;
     this.tiles = new Array(w*h);
     for(let i=0;i<w*h;i++) this.tiles[i]=new Tile();
-    this.dirty = true;           // renderer redraws terrain when true
+    this.dirty = true;           // full terrain redraw when true
+    this.dirtyTiles = new Set();  // indices needing an incremental redraw
   }
   idx(x,y){ return y*this.w+x; }
   inBounds(x,y){ return x>=0 && y>=0 && x<this.w && y<this.h; }
   get(x,y){ return this.inBounds(x,y)? this.tiles[y*this.w+x] : null; }
+  /* Flag a single tile (and its neighbours, whose borders/territory tint may
+     change) for a cheap incremental redraw instead of a full-map repaint. */
+  markDirty(x,y){
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<this.w&&ny<this.h) this.dirtyTiles.add(ny*this.w+nx);
+    }
+  }
 
   /* Generate the two-region world: volcanic wasteland (left) vs grassland
      (right), split by a procedurally-carved winding river down the centre. */
@@ -872,16 +935,23 @@ class World{
     const {w,h}=this;
     // continent centres in normalized [0,1] map space with radii + weight
     const C=[
-      {x:0.20,y:0.30,rx:0.11,ry:0.15,wt:1.0}, // North America
-      {x:0.30,y:0.66,rx:0.07,ry:0.16,wt:0.95},// South America
-      {x:0.30,y:0.14,rx:0.05,ry:0.05,wt:0.7}, // Greenland
-      {x:0.50,y:0.27,rx:0.06,ry:0.07,wt:0.85},// Europe
+      {x:0.18,y:0.28,rx:0.11,ry:0.15,wt:1.0}, // North America
+      {x:0.24,y:0.42,rx:0.04,ry:0.04,wt:0.6}, // Central America / Caribbean
+      {x:0.29,y:0.66,rx:0.07,ry:0.16,wt:0.95},// South America
+      {x:0.30,y:0.13,rx:0.05,ry:0.05,wt:0.7}, // Greenland
+      {x:0.47,y:0.22,rx:0.025,ry:0.03,wt:0.5},// British Isles
+      {x:0.51,y:0.16,rx:0.03,ry:0.05,wt:0.55},// Scandinavia
+      {x:0.50,y:0.28,rx:0.06,ry:0.06,wt:0.85},// Europe
       {x:0.53,y:0.55,rx:0.10,ry:0.18,wt:1.0}, // Africa
-      {x:0.71,y:0.30,rx:0.18,ry:0.15,wt:1.0}, // Asia
-      {x:0.66,y:0.46,rx:0.05,ry:0.06,wt:0.8}, // India / Arabia
-      {x:0.78,y:0.54,rx:0.05,ry:0.05,wt:0.7}, // SE Asia
-      {x:0.84,y:0.74,rx:0.08,ry:0.06,wt:0.85},// Australia
-      {x:0.50,y:0.97,rx:0.60,ry:0.05,wt:1.2}, // Antarctica band
+      {x:0.585,y:0.66,rx:0.02,ry:0.04,wt:0.5},// Madagascar
+      {x:0.60,y:0.40,rx:0.05,ry:0.05,wt:0.75},// Middle East
+      {x:0.72,y:0.28,rx:0.19,ry:0.16,wt:1.05},// Asia
+      {x:0.65,y:0.47,rx:0.05,ry:0.06,wt:0.8}, // India
+      {x:0.86,y:0.30,rx:0.03,ry:0.04,wt:0.5}, // Japan
+      {x:0.79,y:0.55,rx:0.06,ry:0.04,wt:0.7}, // SE Asia / Indonesia
+      {x:0.84,y:0.73,rx:0.08,ry:0.06,wt:0.9}, // Australia
+      {x:0.94,y:0.80,rx:0.025,ry:0.04,wt:0.5},// New Zealand
+      {x:0.50,y:0.98,rx:0.62,ry:0.045,wt:1.3},// Antarctica band
     ];
     for(let y=0;y<h;y++){
       const nyv=y/h;                          // 0=north .. 1=south
@@ -1246,6 +1316,11 @@ class EntityManager{
   tick(){
     this._index();
     const w=this.game.world;
+    // On huge populations, spread expensive decision-making across several
+    // ticks (round-robin) so per-tick cost stays bounded. Movement & vitals
+    // still run every tick, so creatures always animate smoothly.
+    const stride = 1 + Math.min(5, (this.list.length/1400)|0);
+    const phase = this.game.sim.ticks % stride;
     for(let i=this.list.length-1;i>=0;i--){
       const e=this.list[i];
       // --- vitals ---
@@ -1276,14 +1351,17 @@ class EntityManager{
         this._onDeath(e); this.list.splice(i,1); continue;
       }
 
-      // --- race behaviour ---
-      switch(e.race){
-        case RACE.HUMAN: this._civilAI(e,true); break;
-        case RACE.ELF:   this._civilAI(e,false); break;
-        case RACE.ORC:   this._orcAI(e); break;
-        case RACE.MONSTER:this._monsterAI(e); break;
-        case RACE.SKELETON:this._skeletonAI(e); break;
+      // --- race behaviour (decision AI throttled; movement always runs) ---
+      if(stride===1 || (e.id%stride)===phase){
+        switch(e.race){
+          case RACE.HUMAN: this._civilAI(e,true); break;
+          case RACE.ELF:   this._civilAI(e,false); break;
+          case RACE.ORC:   this._orcAI(e); break;
+          case RACE.MONSTER:this._monsterAI(e); break;
+          case RACE.SKELETON:this._skeletonAI(e); break;
+        }
       }
+      this._stepToward(e);   // continuous movement every tick
     }
   }
 
@@ -1309,7 +1387,6 @@ class EntityManager{
     // Homeless civilian -> try to join or found a settlement.
     if(!e.settlement){
       this._seekOrFoundSettlement(e,isHuman);
-      this._stepToward(e);
       return;
     }
     const s=e.settlement;
@@ -1317,7 +1394,7 @@ class EntityManager{
 
     // Flee from nearby threats.
     const threat=this._nearestThreat(e,4);
-    if(threat){ e.state="flee"; this._fleeFrom(e,threat); this._stepToward(e); return; }
+    if(threat){ e.state="flee"; this._fleeFrom(e,threat); return; }
 
     // Assign a job when idle or target reached.
     const reached = Math.abs(e.x-e.tx-0.5)<0.6 && Math.abs(e.y-e.ty-0.5)<0.6;
@@ -1325,7 +1402,6 @@ class EntityManager{
       this._assignJob(e,isHuman);
     }
     this._performJob(e,isHuman);
-    this._stepToward(e);
   }
 
   _seekOrFoundSettlement(e,isHuman){
@@ -1406,7 +1482,7 @@ class EntityManager{
     if(e.job==="wood"){
       if(t.resource===RES.TREE||t.resource===RES.PINE){
         t.health-=26*eff;
-        if(t.health<=0){ t.resource=RES.NONE; w.dirty=true; }
+        if(t.health<=0){ t.resource=RES.NONE; w.markDirty(tx,ty); }
         s.res.wood+=2*eff;
         this.game.effects.spawn("chip",tx+0.5,ty+0.5,"#c9a06a");
       }
@@ -1415,17 +1491,17 @@ class EntityManager{
       if(t.structure===STRUCT.MINE){ s.res.stone+=2; }
       else if(t.resource===RES.STONE||t.biome===BIOME.ROCK){
         s.res.stone+=1.5;
-        if(t.resource===RES.STONE && Math.random()<0.2){ t.resource=RES.NONE; w.dirty=true; }
+        if(t.resource===RES.STONE && Math.random()<0.2){ t.resource=RES.NONE; w.markDirty(tx,ty); }
       }
       e.job="idle";
     } else if(e.job==="food"){
       if(t.structure===STRUCT.FARM){ s.res.food+=3*this.game.sim.seasonFactor; t.growth=Math.min(1,t.growth+0.5); }
-      else if(t.resource===RES.BUSH||t.resource===RES.FLOWER){ s.res.food+=1.5; if(Math.random()<0.3){t.resource=RES.NONE;w.dirty=true;} }
+      else if(t.resource===RES.BUSH||t.resource===RES.FLOWER){ s.res.food+=1.5; if(Math.random()<0.3){t.resource=RES.NONE;w.markDirty(tx,ty);} }
       e.hunger=clamp(e.hunger-40,0,120);
       e.job="idle";
     } else if(e.job==="plant"){
       if(t.walkable && t.resource===RES.NONE && t.structure===STRUCT.NONE){
-        t.resource = Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=40; w.dirty=true;
+        t.resource = Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=40; w.markDirty(tx,ty);
         this.game.effects.spawn("chip",tx+0.5,ty+0.5,"#7ed957");
       }
       e.job="idle";
@@ -1458,7 +1534,6 @@ class EntityManager{
         }
       } else this._wander(e,7);
     }
-    this._stepToward(e);
   }
 
   /* --- Monster AI: chaotic roaming, attacks anything ---------------------- */
@@ -1471,7 +1546,6 @@ class EntityManager{
         this.game.effects.spawn("hit",victim.x,victim.y,"#c95fff");
       }
     } else this._wander(e,9);
-    this._stepToward(e);
   }
 
   /* --- Military AI: soldiers & mages of a kingdom. Ranged units strike from
@@ -1514,7 +1588,6 @@ class EntityManager{
       }
     }
     if(e.role==="mage") e.mana=Math.min(40,e.mana+0.3);
-    this._stepToward(e);
   }
 
   /* --- Skeleton AI: summoned skeletons fight for their kingdom; unbound
@@ -1531,7 +1604,6 @@ class EntityManager{
         this.game.effects.spawn("hit",target.x,target.y,"#d9d4c4");
       }
     } else this._wander(e,e.allyKing?6:8);
-    this._stepToward(e);
   }
 
   /* Nearest genuinely hostile entity for a soldier/mage/skeleton:
@@ -1658,7 +1730,7 @@ class SettlementManager{
     this.kingdoms.push(k);
     const s=new Settlement(k,x,y,this.game.sim.year);
     k.settlements.push(s);
-    t.structure=STRUCT.TOWNHALL; t.health=200; t.owner=s.id; w.dirty=true;
+    t.structure=STRUCT.TOWNHALL; t.health=200; t.owner=s.id; w.markDirty(x,y);
     s.territory.add(y*w.w+x);
     this.claimAround(s,x,y,2);
     this.list.push(s);
@@ -1687,7 +1759,7 @@ class SettlementManager{
     const w=this.game.world;
     for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
       const nx=x+dx,ny=y+dy; const t=w.get(nx,ny);
-      if(t && t.walkable && (t.owner===-1)){ t.owner=s.id; s.territory.add(ny*w.w+nx); }
+      if(t && t.walkable && (t.owner===-1)){ t.owner=s.id; s.territory.add(ny*w.w+nx); w.markDirty(nx,ny); }
     }
   }
 
@@ -1696,7 +1768,7 @@ class SettlementManager{
     const was=t.structure;
     t.structure = was===STRUCT.TOWNHALL?STRUCT.RUIN:STRUCT.NONE;
     if(was===STRUCT.RUIN) t.structure=STRUCT.NONE;
-    t.health=100; w.dirty=true;
+    t.health=100; w.markDirty(x,y);
     const s=this.list.find(z=>z.id===t.owner);
     if(s) this._recount(s);
   }
@@ -1724,8 +1796,7 @@ class SettlementManager{
     for(const m of s.members.slice()){ m.settlement=null; m.isLeader=false; m.role="civilian"; m.job="idle"; }
     s.members.length=0;
     const w=this.game.world;
-    for(const idx of s.territory){ if(w.tiles[idx].owner===s.id) w.tiles[idx].owner=-1; }
-    w.dirty=true;   // refresh territory tint & borders in the terrain cache
+    for(const idx of s.territory){ if(w.tiles[idx].owner===s.id){ w.tiles[idx].owner=-1; w.markDirty(idx%w.w,(idx/w.w)|0); } }
     if(!k.alive){ k.destroyed=true; this.game.chronicle.log(`👑 The ${k.name} is extinguished from history.`,"war"); }
   }
 
@@ -1849,7 +1920,7 @@ class SettlementManager{
   }
 
   _birth(s){
-    if(this.game.entities.list.length>=CONFIG.MAX_ENTITIES) return;
+    if(!this.game.canSpawn()) return;      // respects the population + FPS guard
     const baby=this.game.entities.spawn(s.race,s.cx+(Math.random()*2-1),s.cy+(Math.random()*2-1));
     if(!baby)return;
     baby.age=0; baby.hunger=0;
@@ -1915,7 +1986,7 @@ class SettlementManager{
       if(spot){
         this._pay(s,to);
         const t=w.get(spot.x,spot.y);
-        t.structure=STRUCTURES[to].sid; t.health=STRUCTURES[to].hp; w.dirty=true;
+        t.structure=STRUCTURES[to].sid; t.health=STRUCTURES[to].hp; w.markDirty(spot.x,spot.y);
         this._recount(s);
         this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
         return true;
@@ -1935,7 +2006,7 @@ class SettlementManager{
     this.claimAround(s,spot.x,spot.y,1);
     this._recount(s);
     this.game.effects.spawn("build",spot.x+0.5,spot.y+0.5,"#ffcf5c");
-    w.dirty=true; return true;
+    w.markDirty(spot.x,spot.y); return true;
   }
 
   _findOwnedTile(s,sid){
@@ -2038,7 +2109,7 @@ class SettlementManager{
     while(guard++<200){
       const t=w.get(x0,y0);
       if(t && t.walkable && t.structure===STRUCT.NONE && t.resource!==RES.TREE){
-        t.structure=STRUCT.ROAD; t.health=200; w.dirty=true;
+        t.structure=STRUCT.ROAD; t.health=200; w.markDirty(x0,y0);
       }
       if(x0===x1&&y0===y1)break;
       const e2=2*err;
@@ -2069,7 +2140,7 @@ class DisasterManager{
   startFire(x,y){
     const t=this.game.world.get(x,y); if(!t||t.burn>0)return;
     if(t.biome===BIOME.WATER||t.biome===BIOME.DEEP_WATER)return;
-    t.burn=1; this.fires.push({x,y}); this.game.world.dirty=true;
+    t.burn=1; this.fires.push({x,y});   // burn glow is drawn live, no cache repaint needed
   }
 
   fireBurst(x,y){
@@ -2157,7 +2228,7 @@ class DisasterManager{
         // scorched earth
         if(t.resource===RES.TREE||t.resource===RES.PINE||t.resource===RES.BUSH){t.resource=RES.NONE;}
         t.biome = (t.biome===BIOME.FOREST_FLOOR||t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE)?BIOME.DIRT:t.biome;
-        t.fertility*=0.6; w.dirty=true;
+        t.fertility*=0.6; w.markDirty(f.x,f.y);
         this.fires.splice(i,1);
       }
     }
@@ -2167,9 +2238,9 @@ class DisasterManager{
       if(!t||t.acid<=0){ this.acid.splice(i,1); continue; }
       t.acid-=1;
       if(t.resource===RES.TREE||t.resource===RES.FLOWER||t.resource===RES.BUSH||t.resource===RES.PINE){
-        t.health-=20; if(t.health<=0){ t.resource=RES.NONE; w.dirty=true; }
+        t.health-=20; if(t.health<=0){ t.resource=RES.NONE; w.markDirty(a.x,a.y); }
       }
-      if(t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE){ if(Math.random()<0.1){t.biome=BIOME.DIRT;t.fertility*=0.7;w.dirty=true;} }
+      if(t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE){ if(Math.random()<0.1){t.biome=BIOME.DIRT;t.fertility*=0.7;w.markDirty(a.x,a.y);} }
       if(t.acid<=0)this.acid.splice(i,1);
     }
   }
@@ -2241,8 +2312,9 @@ class Camera{
     return {x:Math.floor(wx/CONFIG.TILE), y:Math.floor(wy/CONFIG.TILE)};
   }
   fit(vw,vh){
-    this.zoom=Math.min(vw/this.worldPxW(), vh/this.worldPxH())*0.98;
-    this.zoom=clamp(this.zoom,this.minZoom,this.maxZoom);
+    let z=Math.min(vw/this.worldPxW(), vh/this.worldPxH())*0.98;
+    // start on the flat surface (above the globe threshold), not the planet
+    this.zoom=clamp(Math.max(z,0.56),this.minZoom,this.maxZoom);
     this.x=(this.worldPxW()-vw/this.zoom)/2;
     this.y=(this.worldPxH()-vh/this.zoom)/2;
   }
@@ -2278,50 +2350,55 @@ class Renderer{
     this.ctx.imageSmoothingEnabled=false;
   }
 
-  /* Redraw the entire terrain cache. Called only when world.dirty is set. */
+  /* Refresh the O(1) owner→colour map used for territory tint & borders. */
+  _refreshOwnerCol(){
+    this._ownerCol={};
+    for(const s of this.game.settlements.list) if(!s.destroyed) this._ownerCol[s.id]=s.color;
+  }
+
+  /* Draw one terrain tile (base + bevel + tint + detail + resource + structure
+     + kingdom border edges). Used by both full and incremental redraws. */
+  _drawTile(x,y){
+    const w=this.game.world, T=CONFIG.TILE, ctx=this.tctx, ownerCol=this._ownerCol;
+    const t=w.tiles[y*w.w+x], px=x*T, py=y*T;
+    const cols=BIOME_COL[t.biome];
+    ctx.fillStyle = ((x+y+t.variant)&1)?cols[0]:cols[1];
+    ctx.fillRect(px,py,T,T);
+    const water=t.biome===BIOME.DEEP_WATER||t.biome===BIOME.WATER;
+    if(!water){
+      ctx.fillStyle="rgba(255,255,255,0.055)"; ctx.fillRect(px,py,T,1); ctx.fillRect(px,py,1,T);
+      ctx.fillStyle="rgba(0,0,0,0.13)";        ctx.fillRect(px,py+T-1,T,1); ctx.fillRect(px+T-1,py,1,T);
+    }
+    const oc = t.owner>=0 ? ownerCol[t.owner] : null;
+    if(oc){ ctx.fillStyle=this._alpha(oc,0.14); ctx.fillRect(px,py,T,T); }
+    this._tileDetail(ctx,t,px,py,T,x,y);
+    if(t.resource) this._resource(ctx,t,px,py,T);
+    if(t.structure) this._structure(ctx,t,px,py,T);
+    // kingdom border edges
+    if(oc){
+      const o=t.owner, bw=2; ctx.fillStyle=oc;
+      const diff=(nx,ny)=>{ const nt=w.get(nx,ny); return !nt || nt.owner!==o; };
+      if(diff(x-1,y)) ctx.fillRect(px,py,bw,T);
+      if(diff(x+1,y)) ctx.fillRect(px+T-bw,py,bw,T);
+      if(diff(x,y-1)) ctx.fillRect(px,py,T,bw);
+      if(diff(x,y+1)) ctx.fillRect(px,py+T-bw,T,bw);
+    }
+  }
+
+  /* Full repaint of the terrain cache (world gen / big disasters only). */
   drawTerrain(){
-    const w=this.game.world, T=CONFIG.TILE, ctx=this.tctx;
-    // O(1) owner→colour lookup for territory tint & borders
-    const ownerCol={};
-    for(const s of this.game.settlements.list) if(!s.destroyed) ownerCol[s.id]=s.color;
+    const w=this.game.world;
+    this._refreshOwnerCol();
+    for(let y=0;y<w.h;y++)for(let x=0;x<w.w;x++) this._drawTile(x,y);
+    w.dirty=false; w.dirtyTiles.clear();
+  }
 
-    for(let y=0;y<w.h;y++){
-      for(let x=0;x<w.w;x++){
-        const t=w.tiles[y*w.w+x];
-        const px=x*T, py=y*T;
-        // base biome
-        const cols=BIOME_COL[t.biome];
-        ctx.fillStyle = ((x+y+t.variant)&1)?cols[0]:cols[1];
-        ctx.fillRect(px,py,T,T);
-        // blocky bevel — a chunky "block" edge on land tiles
-        const water=t.biome===BIOME.DEEP_WATER||t.biome===BIOME.WATER;
-        if(!water){
-          ctx.fillStyle="rgba(255,255,255,0.055)"; ctx.fillRect(px,py,T,1); ctx.fillRect(px,py,1,T);
-          ctx.fillStyle="rgba(0,0,0,0.13)";        ctx.fillRect(px,py+T-1,T,1); ctx.fillRect(px+T-1,py,1,T);
-        }
-        // territory tint (subtle)
-        if(t.owner>=0 && ownerCol[t.owner]){ ctx.fillStyle=this._alpha(ownerCol[t.owner],0.14); ctx.fillRect(px,py,T,T); }
-        this._tileDetail(ctx,t,px,py,T,x,y);
-        if(t.resource) this._resource(ctx,t,px,py,T);
-        if(t.structure) this._structure(ctx,t,px,py,T);
-      }
-    }
-
-    // kingdom territory borders — solid coloured outlines like a political map
-    const bw=2;
-    for(let y=0;y<w.h;y++){
-      for(let x=0;x<w.w;x++){
-        const o=w.tiles[y*w.w+x].owner;
-        if(o<0 || !ownerCol[o]) continue;
-        const px=x*T, py=y*T; ctx.fillStyle=ownerCol[o];
-        const diff=(nx,ny)=>{ const nt=w.get(nx,ny); return !nt || nt.owner!==o; };
-        if(diff(x-1,y)) ctx.fillRect(px,py,bw,T);
-        if(diff(x+1,y)) ctx.fillRect(px+T-bw,py,bw,T);
-        if(diff(x,y-1)) ctx.fillRect(px,py,T,bw);
-        if(diff(x,y+1)) ctx.fillRect(px,py+T-bw,T,bw);
-      }
-    }
-    w.dirty=false;
+  /* Cheap incremental repaint: only the handful of tiles that changed. */
+  drawTerrainTiles(set){
+    const w=this.game.world;
+    this._refreshOwnerCol();
+    for(const idx of set) this._drawTile(idx%w.w, (idx/w.w)|0);
+    set.clear();
   }
 
   _alpha(hex,a){
@@ -2507,7 +2584,16 @@ class Renderer{
   render(){
     const ctx=this.ctx, cam=this.game.camera, T=CONFIG.TILE;
     this.frame++;
-    if(this.game.world.dirty) this.drawTerrain();
+    // Terrain: a full repaint only on world-scale changes (throttled); the
+    // frequent, localized changes (building, chopping, painting) redraw just
+    // their own tiles every frame — cheap even on a huge map.
+    const world=this.game.world;
+    if(world.dirty){
+      const now=performance.now();
+      if(now-(this._lastTerrain||0) >= 110){ this.drawTerrain(); this._lastTerrain=now; }
+    } else if(world.dirtyTiles.size){
+      this.drawTerrainTiles(world.dirtyTiles);
+    }
 
     // clear
     ctx.setTransform(1,0,0,1,0,0);
@@ -2589,40 +2675,79 @@ class Renderer{
 
   _entities(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
+    const vw=this.canvas.width/cam.zoom, vh=this.canvas.height/cam.zoom;
+    const camx=cam.x, camy=cam.y;
+    // Level-of-detail: only draw the chunky pixel-art character when zoomed in
+    // enough to see it; otherwise a cheap coloured dot keeps huge crowds fast.
+    const detailed = cam.zoom>=0.85;
     for(const e of this.game.entities.list){
       const px=e.x*T, py=e.y*T;
-      // skip if off-screen (cheap cull)
-      if(px<cam.x-T||py<cam.y-T||px>cam.x+this.canvas.width/cam.zoom+T||py>cam.y+this.canvas.height/cam.zoom+T) continue;
-      const col=this._raceColor(e);
-      // shadow
-      ctx.fillStyle="rgba(0,0,0,0.28)";
-      ctx.beginPath(); ctx.ellipse(px,py+3,3.2,1.6,0,0,7); ctx.fill();
-      // body pixel
-      ctx.fillStyle=col;
-      const s = e.isLeader?4.4:(e.race===RACE.MONSTER?4.8:3.4);
-      ctx.fillRect(px-s/2, py-s, s, s);
-      // head dot
-      ctx.fillStyle=this._shade(col,1.25);
-      ctx.fillRect(px-1, py-s-1.5, 2, 2);
-      // leader crown
-      if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-2,py-s-3,4,1.4); }
-      // role markers: soldiers carry a weapon, mages glow with a staff
-      if(e.role==="soldier"){
-        ctx.strokeStyle=e.equipment==="musket"?"#d9c48a":"#c9ccd2"; ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(px+2,py-s+1); ctx.lineTo(px+2,py-s-(e.equipment==="musket"?4:3)); ctx.stroke();
-        if(e.equipment==="musket"){ ctx.fillStyle="#3a2c18"; ctx.fillRect(px+1.4,py-s-4,1.4,1.4); }
-      } else if(e.role==="mage"){
-        const g=0.5+0.5*Math.sin(this.frame*0.2+e.id);
-        ctx.fillStyle=`rgba(197,140,255,${0.5+0.5*g})`; ctx.fillRect(px+1.5,py-s-3,1.6,4);   // staff
-        ctx.beginPath(); ctx.arc(px+2.3,py-s-3.5,1.6,0,7); ctx.fill();                        // orb
+      if(px<camx-T||py<camy-T||px>camx+vw+T||py>camy+vh+T) continue; // cull
+      if(detailed) this._drawChar(ctx,e,px,py);
+      else {
+        const col=this._raceColor(e);
+        ctx.fillStyle=col;
+        const s=e.isLeader?3:(e.race===RACE.MONSTER?3.4:2.2);
+        ctx.fillRect(px-s/2,py-s,s,s);
+        if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-1.5,py-s-1.5,3,1); }
       }
-      // undead ribcage tick
-      if(e.race===RACE.SKELETON){ ctx.fillStyle="#8a857a"; ctx.fillRect(px-s/2,py-s+1,s,0.8); }
-      // low-hp flash
-      if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.5)"; ctx.fillRect(px-s/2,py-s,s,s); }
-      // carrying resource tick
-      if(e.carry>0){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px+2,py-s,1.6,1.6); }
     }
+  }
+
+  _skin(e){
+    if(e.race===RACE.ORC) return "#7ea84a";
+    if(e.race===RACE.SKELETON) return e.allyKing?"#eef0e6":"#d8d2c0";
+    if(e.race===RACE.MONSTER) return "#8a3fb0";
+    if(e.race===RACE.ELF) return "#dfeecb";
+    return "#e8b78c"; // human skin
+  }
+  /* A chunky WorldBox-style pixel humanoid: big head, blocky torso, arms out,
+     little legs. Colour comes from the kingdom banner / race. */
+  _drawChar(ctx,e,px,py){
+    const cloth=this._raceColor(e), skin=this._skin(e);
+    const dark="#3a2c1e";
+    // ground shadow
+    ctx.fillStyle="rgba(0,0,0,0.22)"; ctx.beginPath(); ctx.ellipse(px,py+0.5,3,1.3,0,0,7); ctx.fill();
+    if(e.race===RACE.MONSTER){
+      // a lumpy beast rather than a humanoid
+      ctx.fillStyle=cloth; ctx.beginPath(); ctx.ellipse(px,py-3,4.4,3.6,0,0,7); ctx.fill();
+      ctx.fillStyle="#2a0f38"; ctx.fillRect(px-2,py-4,1.4,1.4); ctx.fillRect(px+0.8,py-4,1.4,1.4); // eyes
+      ctx.fillStyle=this._shade(cloth,0.7); ctx.fillRect(px-3.5,py-6,1.4,2); ctx.fillRect(px+2.1,py-6,1.4,2); // horns
+      return;
+    }
+    // legs
+    ctx.fillStyle=dark; ctx.fillRect(px-2,py-2.4,1.5,2.4); ctx.fillRect(px+0.5,py-2.4,1.5,2.4);
+    // torso (clothing)
+    ctx.fillStyle=cloth; ctx.fillRect(px-2.6,py-7,5.2,4.8);
+    ctx.fillStyle=this._shade(cloth,0.8); ctx.fillRect(px-2.6,py-3.4,5.2,1); // torso shade
+    // arms (skin) out to the sides
+    ctx.fillStyle=skin; ctx.fillRect(px-4.2,py-6.6,1.7,2.6); ctx.fillRect(px+2.5,py-6.6,1.7,2.6);
+    // head
+    ctx.fillStyle=skin; ctx.fillRect(px-2.3,py-11.5,4.6,4.6);
+    // hair / hat by role & race
+    if(e.role==="mage"){
+      ctx.fillStyle="#6a4fae"; ctx.beginPath(); ctx.moveTo(px-3,py-10.8); ctx.lineTo(px,py-15.5); ctx.lineTo(px+3,py-10.8); ctx.fill(); // wizard hat
+      ctx.fillStyle="#ffd94f"; ctx.fillRect(px-0.6,py-13,1.2,1.2);
+    } else if(e.race===RACE.SKELETON){
+      ctx.fillStyle="#c9c3b0"; ctx.fillRect(px-1.4,py-10,1,1); ctx.fillRect(px+0.5,py-10,1,1); // eye sockets
+      ctx.fillStyle="#8a857a"; ctx.fillRect(px-2.4,py-3.2,4.8,0.9);                            // ribs
+    } else {
+      // hair
+      ctx.fillStyle= e.race===RACE.ORC?"#3d5220":"#3a2c1e";
+      ctx.fillRect(px-2.4,py-11.8,4.8,2);
+      if(e.race===RACE.ORC){ ctx.fillStyle="#e8e2c0"; ctx.fillRect(px-2.6,py-7.6,0.9,1.2); ctx.fillRect(px+1.7,py-7.6,0.9,1.2); } // tusks
+    }
+    // eyes
+    if(e.race!==RACE.SKELETON){ ctx.fillStyle="#2a2018"; ctx.fillRect(px-1.2,py-9.4,0.9,1); ctx.fillRect(px+0.4,py-9.4,0.9,1); }
+    // leader crown
+    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-2.4,py-13.4,4.8,1.6); ctx.fillRect(px-2.4,py-14.6,1,1.4); ctx.fillRect(px-0.5,py-14.6,1,1.4); ctx.fillRect(px+1.4,py-14.6,1,1.4); }
+    // weapons
+    if(e.role==="soldier"){
+      if(e.equipment==="musket"){ ctx.strokeStyle="#4a3a24"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(px+4,py-3); ctx.lineTo(px+4,py-9); ctx.stroke(); ctx.fillStyle="#2a2018"; ctx.fillRect(px+3.4,py-9.5,1.4,1.4); }
+      else { ctx.strokeStyle="#c9ccd2"; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(px+4,py-2); ctx.lineTo(px+4,py-8.5); ctx.stroke(); ctx.fillStyle="#8a6f3a"; ctx.fillRect(px+3,py-4,2,1.2); }
+    }
+    // low-hp flash
+    if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.45)"; ctx.fillRect(px-2.6,py-11.5,5.2,11.5); }
   }
 
   _raceColor(e){
@@ -2643,31 +2768,28 @@ class Renderer{
   _labels(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
     if(cam.zoom<0.45) return;                 // hide labels when seeing the globe
-    ctx.textAlign="left";
+    const camx=cam.x, camy=cam.y, vw=this.canvas.width/cam.zoom, vh=this.canvas.height/cam.zoom;
     const sel=this.game.ui.selectedKingdom;
+    ctx.font="bold 8px 'Courier New',monospace";
     for(const s of this.game.settlements.list){
       if(s.destroyed)continue;
-      const k=s.kingdom;
       const bx=s.cx*T+T/2, by=s.cy*T;
+      // cull off-screen banners — the big win with hundreds of realms
+      if(bx<camx-20||by<camy-40||bx>camx+vw+20||by>camy+vh) continue;
+      const k=s.kingdom;
       // --- flag/banner pole above the capital ---
       ctx.fillStyle="#2a2d31"; ctx.fillRect(bx-0.5,by-20,1.4,20);        // pole
       ctx.fillStyle=k.color;   ctx.fillRect(bx+1,by-20,10,7);            // banner cloth
       ctx.fillStyle="rgba(0,0,0,0.3)"; ctx.fillRect(bx+1,by-20,10,1);
-      ctx.fillStyle="#0d0e11"; ctx.font="6px 'Courier New',monospace"; ctx.textAlign="center";
-      ctx.fillText(FACTION_META[k.faction].icon.slice(0,1)||"•",bx+6,by-15);
-      // --- name plate: KINGDOM name + total population (e.g. "Claude 217") ---
+      // --- name plate: KINGDOM name + total population (monospace width est.) ---
       const label=`${k.name} ${k.pop}`;
-      ctx.font="bold 8px 'Courier New',monospace";
-      const w=ctx.measureText(label).width+8;
+      const w=label.length*4.9+8;
       const lx=bx-w/2, ly=by-32;
-      ctx.fillStyle= sel===k? "rgba(79,195,247,0.9)":"rgba(15,16,20,0.72)";
+      ctx.fillStyle= sel===k? "rgba(79,195,247,0.92)":"rgba(15,16,20,0.72)";
       ctx.fillRect(lx,ly,w,11);
       ctx.fillStyle=k.color; ctx.fillRect(lx,ly,2,11);                   // banner accent
-      ctx.fillStyle= sel===k? "#08222e":"#e7e9ee";
+      ctx.fillStyle= sel===k? "#08222e":"#e7e9ee"; ctx.textAlign="center";
       ctx.fillText(label,bx,ly+8);
-      // small crown for the ruling capital
-      ctx.fillStyle="#ffcf5c"; ctx.font="7px 'Courier New',monospace";
-      ctx.fillText("♛",lx-2,ly+8);
     }
     ctx.textAlign="left";
   }
@@ -3080,6 +3202,63 @@ class UIManager{
       if(map[ev.key]) this.selectTool(map[ev.key]);
     });
 
+    // ---- TOUCH input (mobile): 1-finger drag pans, tap uses the tool,
+    //      two-finger pinch zooms around the pinch midpoint ----
+    let tStartX=0,tStartY=0,tLastX=0,tLastY=0,tMoved=false,tStart=0,tMode=null,pinchD=0;
+    const rel=(t)=>{ const r=cv.getBoundingClientRect(); return {x:t.clientX-r.left,y:t.clientY-r.top}; };
+    const touchDist=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+    cv.addEventListener("touchstart",(ev)=>{
+      ev.preventDefault();
+      if(ev.touches.length===1){
+        const t=ev.touches[0]; tStartX=tLastX=t.clientX; tStartY=tLastY=t.clientY;
+        tMoved=false; tStart=performance.now(); tMode="pan";
+      } else if(ev.touches.length===2){
+        tMode="pinch"; pinchD=touchDist(ev.touches[0],ev.touches[1]);
+      }
+    },{passive:false});
+    cv.addEventListener("touchmove",(ev)=>{
+      ev.preventDefault();
+      if(tMode==="pinch" && ev.touches.length===2){
+        const d=touchDist(ev.touches[0],ev.touches[1]);
+        const midX=(ev.touches[0].clientX+ev.touches[1].clientX)/2;
+        const midY=(ev.touches[0].clientY+ev.touches[1].clientY)/2;
+        const r=cv.getBoundingClientRect(), sx=midX-r.left, sy=midY-r.top;
+        const before=g.camera.screenToTile(sx,sy);
+        g.camera.zoom=clamp(g.camera.zoom*(d/(pinchD||d)),g.camera.minZoom,g.camera.maxZoom);
+        const after=g.camera.screenToTile(sx,sy);
+        g.camera.x+=(before.x-after.x)*CONFIG.TILE; g.camera.y+=(before.y-after.y)*CONFIG.TILE;
+        pinchD=d; g.camera.clampCam(cv.width,cv.height);
+      } else if(ev.touches.length===1){
+        const t=ev.touches[0], dx=t.clientX-tLastX, dy=t.clientY-tLastY;
+        if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6) tMoved=true;
+        g.camera.x-=dx/g.camera.zoom; g.camera.y-=dy/g.camera.zoom;
+        tLastX=t.clientX; tLastY=t.clientY; g.camera.clampCam(cv.width,cv.height);
+      }
+    },{passive:false});
+    cv.addEventListener("touchend",(ev)=>{
+      ev.preventDefault();
+      if(tMode==="pan" && !tMoved && performance.now()-tStart<350){
+        const p=rel({clientX:tStartX,clientY:tStartY}); applyAt(p.x,p.y);   // tap = use tool
+      }
+      if(ev.touches.length===0) tMode=null;
+    },{passive:false});
+
+    // ---- mobile drawer toggles ----
+    const scrim=document.getElementById("m-scrim");
+    const closeDrawers=()=>{ document.getElementById("leftpanel").classList.remove("open");
+      document.getElementById("rightpanel").classList.remove("open"); scrim.classList.remove("show"); };
+    document.getElementById("m-powers").addEventListener("click",()=>{
+      const p=document.getElementById("leftpanel"), open=p.classList.contains("open");
+      closeDrawers(); if(!open){ p.classList.add("open"); scrim.classList.add("show"); }
+    });
+    document.getElementById("m-realms").addEventListener("click",()=>{
+      const p=document.getElementById("rightpanel"), open=p.classList.contains("open");
+      closeDrawers(); if(!open){ p.classList.add("open"); scrim.classList.add("show"); }
+    });
+    scrim.addEventListener("click",closeDrawers);
+    // picking a tool on mobile closes the powers drawer so you can play
+    document.getElementById("godpowers").addEventListener("click",()=>{ if(window.innerWidth<=860) closeDrawers(); });
+
     window.addEventListener("resize",()=>{
       g.renderer.resize();
       g.camera.clampCam(cv.width,cv.height);
@@ -3116,7 +3295,6 @@ class UIManager{
       if(dx*dx+dy*dy>r*r+ (r>0?0.5:0)) continue;
       this._applyBrush(cx+dx,cy+dy);
     }
-    w.dirty=true;
   }
 
   _applyBrush(x,y){
@@ -3130,6 +3308,7 @@ class UIManager{
       case "acid":  t.acid=6; this.game.disasters.acid.push({x,y}); break;
       case "house": case "farm": case "mine": case "road": this._placeStructure(x,y); break;
     }
+    w.markDirty(x,y);
   }
 
   /* Spawn a civilian group tagged with the currently-selected faction/traits. */
@@ -3174,7 +3353,7 @@ class UIManager{
     let best=null,bd=1e9;
     for(const s of this.game.settlements.list){ if(s.destroyed)continue; const d=dist2(x,y,s.cx,s.cy); if(d<bd){bd=d;best=s;} }
     if(best && bd<24*24){ t.owner=best.id; best.territory.add(y*w.w+x); this.game.settlements._recount(best); }
-    w.dirty=true;
+    w.markDirty(x,y);
   }
 
   /* --- HUD refresh (called each frame, cheap) ---------------------------- */
@@ -3417,12 +3596,12 @@ class Game{
       // trees slowly reclaim fertile empty ground (elf territory faster)
       if(t.resource===RES.NONE && t.structure===STRUCT.NONE && t.walkable && t.fertility>0.55 &&
          (t.biome===BIOME.FOREST_FLOOR||t.biome===BIOME.GRASS||t.biome===BIOME.FERTILE)){
-        if(Math.random()<0.02*sim.seasonFactor){ t.resource=Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=30; w.dirty=true; }
+        if(Math.random()<0.02*sim.seasonFactor){ t.resource=Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=30; w.markDirty(x,y); }
       }
       // grown trees heal back to full
       if((t.resource===RES.TREE||t.resource===RES.PINE)&&t.health<100){ t.health=Math.min(100,t.health+4); }
       // dirt slowly returns to grass in fertile zones
-      if(t.biome===BIOME.DIRT && t.fertility>0.4 && Math.random()<0.01){ t.biome=BIOME.GRASS; w.dirty=true; }
+      if(t.biome===BIOME.DIRT && t.fertility>0.4 && Math.random()<0.01){ t.biome=BIOME.GRASS; w.markDirty(x,y); }
     }
   }
 
@@ -3484,10 +3663,17 @@ class Game{
     this.ui.updateHUD();
   }
 
+  /* Rolling FPS estimate + a guard that throttles population growth if the
+     frame rate drops — this is what makes a 50-million cap safe in practice. */
+  get fps(){ return this._fps||60; }
+  canSpawn(){ return this.entities.list.length<CONFIG.MAX_ENTITIES && this.fps>=CONFIG.MIN_FPS; }
+
   /* --- the main animation loop ------------------------------------------ */
   loop(now){
     const dt=Math.min(0.05,(now-this.last)/1000);
     this.last=now;
+    // smoothed FPS
+    if(dt>0) this._fps = this._fps? this._fps*0.9 + (1/dt)*0.1 : 1/dt;
 
     // advance simulation (fixed timestep inside)
     this.sim.advance(dt);
