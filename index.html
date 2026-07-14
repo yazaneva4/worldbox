@@ -241,6 +241,13 @@ body{
 #tiltctrl.hidden{display:none}
 #tiltctrl .tiltlabel{font-size:11px;color:var(--text-dim);white-space:nowrap}
 #tiltctrl input[type=range]{width:110px}
+#tiltctrl button{
+  width:26px;height:26px;font-size:14px;flex:none;
+  background:var(--panel-3);color:var(--text);
+  border:1px solid var(--border);border-radius:5px;cursor:pointer;
+}
+#tiltctrl button:hover{background:#4a4d55}
+#tiltctrl button:active{transform:translateY(1px)}
 
 /* on-canvas hint */
 #hint{
@@ -479,10 +486,13 @@ body{
       <button id="zoom-out" title="Zoom Out">－</button>
       <button id="zoom-home" title="Reset Camera">⌂</button>
     </div>
-    <!-- 3D-only relief tilt control (hidden while in the flat/2D view) -->
+    <!-- 3D-only camera controls (hidden while in the flat/2D view): rotate
+         the view 90° at a time, and a relief slider to exaggerate/flatten it -->
     <div id="tiltctrl" class="hidden">
+      <button id="iso-rot-l" title="Rotate view left">⟲</button>
       <span class="tiltlabel">⛰️ Relief</span>
       <input type="range" id="tiltSlider" min="40" max="180" value="100">
+      <button id="iso-rot-r" title="Rotate view right">⟳</button>
     </div>
     <div id="hint">Blank canvas — paint terrain &amp; place life · Middle-drag pan · Scroll zoom</div>
     <div id="toast"></div>
@@ -2372,11 +2382,13 @@ class Camera{
     this.zoom=1;
     this.minZoom=0.16; this.maxZoom=4;   // low min so you can zoom out to the globe
     this.shakeAmt=0;
-    // 3D (isometric block) mode has its own independent pan/zoom/tilt, since
-    // its projection is fundamentally different from the flat top-down camera.
-    this.iso={ x:0, y:0, zoom:1, tilt:1, minZoom:0.35, maxZoom:3 };
+    // 3D (isometric block) mode has its own independent pan/zoom/tilt/angle,
+    // since its projection is fundamentally different from the flat top-down
+    // camera. `angle` is the camera's yaw (radians) — rotating it lets you
+    // orbit around the world.
+    this.iso={ x:0, y:0, zoom:1, tilt:1, angle:0, minZoom:0.35, maxZoom:3 };
   }
-  resetIso(){ this.iso.x=0; this.iso.y=0; this.iso.zoom=1; this.iso.tilt=1; }
+  resetIso(){ this.iso.x=0; this.iso.y=0; this.iso.zoom=1; this.iso.tilt=1; this.iso.angle=0; }
   shake(a){ this.shakeAmt=Math.max(this.shakeAmt,a); }
   update(dt){ if(this.shakeAmt>0) this.shakeAmt=Math.max(0,this.shakeAmt-dt*40); }
   /* Centre the view on a tile (used by the Realms list). */
@@ -3157,15 +3169,31 @@ class Renderer{
     return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
   }
 
+  /* The two screen-space basis vectors for +1 world-X and +1 world-Y, rotated
+     by the camera's current yaw angle. At angle 0 these reduce to the classic
+     (tx-ty)*hw / (tx+ty)*hh diamond projection; rotating them lets the whole
+     iso camera orbit around the world instead of being stuck at one angle. */
+  _isoBasis(){
+    const a=this.game.camera.iso.angle, hw=this.ISO_TW/2, hh=this.ISO_TH/2;
+    const c=Math.cos(a), s=Math.sin(a);
+    return {
+      ex:{ x: hw*c - hh*s,  y: hw*s + hh*c  },   // +1 tx
+      ez:{ x: -hw*c - hh*s, y: -hw*s + hh*c },   // +1 ty
+    };
+  }
+
   /* Screen point (logical CSS px) → tile coords. Ignores per-tile elevation
      (standard iso hit-test approximation — at most ~1 tile off on tall relief,
      imperceptible for painting/inspecting). Mirrors the exact forward
-     projection used by renderIso() so clicks land where they visually look. */
+     projection used by renderIso() so clicks land where they visually look,
+     at any camera rotation. */
   isoScreenToTile(sx,sy){
-    const iso=this.game.camera.iso, hw=this.ISO_TW/2, hh=this.ISO_TH/2;
+    const iso=this.game.camera.iso;
+    const {ex,ez}=this._isoBasis();
     const cx=this.cw/2, cy=this.ch/2;
     const ux=(sx-cx)/iso.zoom+iso.x, uy=(sy-cy)/iso.zoom+iso.y;
-    return { x:Math.floor((uy/hh+ux/hw)/2), y:Math.floor((uy/hh-ux/hw)/2) };
+    const det=ex.x*ez.y-ez.x*ex.y;
+    return { x:Math.floor((ez.y*ux-ez.x*uy)/det), y:Math.floor((-ex.y*ux+ex.x*uy)/det) };
   }
 
   renderIso(){
@@ -3182,13 +3210,15 @@ class Renderer{
 
     const zoom=iso.zoom, tilt=iso.tilt;
     const hw=this.ISO_TW/2, hh=this.ISO_TH/2;
+    const {ex,ez}=this._isoBasis();
     const cx=cw/2, cy=ch/2;
     const far = zoom<0.55;                    // LOD: skip walls/props when zoomed way out
 
     // visible tile bounds via inverse-projecting the 4 screen corners
+    const det=ex.x*ez.y-ez.x*ex.y;
     const toTile=(sx,sy)=>{
       const ux=(sx-cx)/zoom+iso.x, uy=(sy-cy)/zoom+iso.y;
-      return { tx:(uy/hh+ux/hw)/2, ty:(uy/hh-ux/hw)/2 };
+      return { tx:(ez.y*ux-ez.x*uy)/det, ty:(-ex.y*ux+ex.x*uy)/det };
     };
     const cns=[toTile(0,0),toTile(cw,0),toTile(0,ch),toTile(cw,ch)];
     const margin=8;
@@ -3197,19 +3227,22 @@ class Renderer{
     let y0=clamp(Math.floor(Math.min(...cns.map(p=>p.ty)))-margin,0,w.h-1);
     let y1=clamp(Math.ceil (Math.max(...cns.map(p=>p.ty)))+margin,0,w.h-1);
 
-    // combined painter's-order list: ground tiles + creatures, back-to-front
+    // combined painter's-order list: ground tiles + creatures, back-to-front.
+    // Depth = projected screen-Y contribution (before pan/zoom), which stays
+    // a correct back-to-front ordering at any rotation angle.
     const items=[];
-    for(let ty=y0;ty<=y1;ty++) for(let tx=x0;tx<=x1;tx++) items.push({d:tx+ty,tx,ty,ent:null});
+    for(let ty=y0;ty<=y1;ty++) for(let tx=x0;tx<=x1;tx++) items.push({d:tx*ex.y+ty*ez.y,tx,ty,ent:null});
+    const entBias=hh*0.3;   // tie-break so creatures draw above ground at the same depth
     for(const e of this.game.entities.list){
       const etx=e.x|0, ety=e.y|0;
       if(etx<x0-1||etx>x1+1||ety<y0-1||ety>y1+1) continue;
-      items.push({d:e.x+e.y+0.4,ent:e});
+      items.push({d:e.x*ex.y+e.y*ez.y+entBias,ent:e});
     }
     items.sort((a,b)=>a.d-b.d);
 
     for(const it of items){
-      if(it.ent) this._isoDrawEntity(ctx,it.ent,zoom,tilt,iso,cx,cy,hw,hh);
-      else this._isoDrawTile(ctx,it.tx,it.ty,zoom,tilt,iso,cx,cy,hw,hh,far);
+      if(it.ent) this._isoDrawEntity(ctx,it.ent,zoom,tilt,iso,cx,cy,ex,ez);
+      else this._isoDrawTile(ctx,it.tx,it.ty,zoom,tilt,iso,cx,cy,hw,hh,ex,ez,far);
     }
 
     // hover cursor: a diamond outline on the tile under the pointer
@@ -3218,7 +3251,7 @@ class Renderer{
       const t=w.get(hv.x,hv.y);
       if(t){
         const elev=this._isoElev(t);
-        const gx0=(hv.x+0.5-(hv.y+0.5))*hw, gy0=(hv.x+0.5+(hv.y+0.5))*hh;
+        const gx0=(hv.x+0.5)*ex.x+(hv.y+0.5)*ez.x, gy0=(hv.x+0.5)*ex.y+(hv.y+0.5)*ez.y;
         const px=cx+(gx0-iso.x)*zoom, py=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
         const w2=hw*zoom, h2=hh*zoom;
         ctx.strokeStyle="rgba(255,255,255,0.75)"; ctx.lineWidth=1.5;
@@ -3230,12 +3263,12 @@ class Renderer{
 
     // small mode caption, bottom-left, so it's clear you're in 3D
     ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.font="10px 'Courier New',monospace"; ctx.textAlign="left";
-    ctx.fillText("🧊 3D BLOCK VIEW — drag to orbit, scroll to zoom",10,ch-10);
+    ctx.fillText("🧊 3D BLOCK VIEW — drag to pan · ⟲⟳ to rotate · scroll to zoom",10,ch-10);
   }
 
-  _isoDrawTile(ctx,tx,ty,zoom,tilt,iso,cx,cy,hw,hh,far){
+  _isoDrawTile(ctx,tx,ty,zoom,tilt,iso,cx,cy,hw,hh,ex,ez,far){
     const w=this.game.world, t=w.get(tx,ty); if(!t) return;
-    const gx0=(tx-ty)*hw, gy0=(tx+ty)*hh;
+    const gx0=tx*ex.x+ty*ez.x, gy0=tx*ex.y+ty*ez.y;
     const elev=this._isoElev(t);
     const px=cx+(gx0-iso.x)*zoom;
     const topY=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
@@ -3349,23 +3382,56 @@ class Renderer{
     }
   }
 
-  _isoDrawEntity(ctx,e,zoom,tilt,iso,cx,cy,hw,hh){
+  /* A small "little person" billboard: legs, kingdom-coloured torso, and a
+     round head in the creature's ACTUAL skin tone with its own hair colour —
+     reusing the same per-creature appearance the flat view uses, so a 3D
+     crowd looks as varied as the top-down one instead of uniform blobs. */
+  _isoDrawEntity(ctx,e,zoom,tilt,iso,cx,cy,ex,ez){
     const w=this.game.world, t=w.get(e.x|0,e.y|0);
     const elev=t? this._isoElev(t):0;
-    const gx0=(e.x-e.y)*hw, gy0=(e.x+e.y)*hh;
+    const gx0=e.x*ex.x+e.y*ez.x, gy0=e.x*ex.y+e.y*ez.y;
     const px=cx+(gx0-iso.x)*zoom, py=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
-    const s=zoom, col=this._raceColor(e);
-    ctx.fillStyle="rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(px,py-1*s,2.6*s,1.1*s,0,0,7); ctx.fill();
-    const giant=e.has("giant")?1.4:1;
-    const bh=(e.isLeader?7:(e.race===RACE.MONSTER?8:5.5))*s*giant;
-    ctx.fillStyle=col; ctx.fillRect(px-1.6*s*giant,py-bh,3.2*s*giant,bh*0.72);
-    ctx.fillStyle=this._shade(col,1.25); ctx.fillRect(px-1.1*s*giant,py-bh-1.6*s*giant,2.2*s*giant,1.8*s*giant);
-    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-1.6*s,py-bh-2.6*s,3.2*s,1*s); }
-    if(e.role==="mage"){ ctx.fillStyle="#c58cff"; ctx.fillRect(px+1.2*s,py-bh-1.5*s,1*s,2.6*s); }
-    else if(e.role==="soldier"){
-      ctx.strokeStyle=e.equipment==="musket"?"#d9c48a":"#c9ccd2"; ctx.lineWidth=Math.max(1,1*s);
-      ctx.beginPath(); ctx.moveTo(px+1.4*s,py-bh*0.7); ctx.lineTo(px+1.4*s,py-bh-2*s); ctx.stroke();
+    const s=zoom, giant=e.has("giant")?1.4:1, cloth=this._raceColor(e);
+
+    if(e.race===RACE.MONSTER){
+      const r=2.7*s*giant;
+      ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(px,py-0.4*s,r*1.1,r*0.45,0,0,7); ctx.fill();
+      ctx.fillStyle=cloth; ctx.beginPath(); ctx.ellipse(px,py-r*1.25,r*1.25,r*0.95,0,0,7); ctx.fill();
+      ctx.fillStyle="#2a0f38"; ctx.fillRect(px-r*0.55,py-r*1.5,r*0.35,r*0.35); ctx.fillRect(px+r*0.2,py-r*1.5,r*0.35,r*0.35);
+      ctx.fillStyle=this._shade(cloth,0.7);
+      ctx.fillRect(px-r*0.95,py-r*2.05,r*0.32,r*0.6); ctx.fillRect(px+r*0.63,py-r*2.05,r*0.32,r*0.6);
+      return;
     }
+
+    const skin=e.skinCol||"#e8b78c", hair=e.hairCol||"#3a2c1e";
+    const legH=2.1*s*giant, bodyH=4.0*s*giant, headR=1.55*s*giant;
+    ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(px,py-0.4*s,2.6*s*giant,1.05*s*giant,0,0,7); ctx.fill();
+    // legs
+    ctx.fillStyle="#2c2015";
+    ctx.fillRect(px-1.25*s*giant,py-legH,1.05*s*giant,legH);
+    ctx.fillRect(px+0.2*s*giant, py-legH,1.05*s*giant,legH);
+    // torso (kingdom-coloured clothing)
+    ctx.fillStyle=cloth; ctx.fillRect(px-1.65*s*giant,py-legH-bodyH,3.3*s*giant,bodyH);
+    ctx.fillStyle=this._shade(cloth,0.72); ctx.fillRect(px-1.65*s*giant,py-legH-1.1*s*giant,3.3*s*giant,1.1*s*giant);
+    // head — the creature's actual skin tone, round so it reads as a head
+    const headY=py-legH-bodyH-headR*0.85;
+    ctx.fillStyle=skin; ctx.beginPath(); ctx.arc(px,headY,headR,0,7); ctx.fill();
+    // hair (skip for skeletons — draw eye sockets instead)
+    if(e.race===RACE.SKELETON){
+      ctx.fillStyle="#38342b";
+      ctx.fillRect(px-headR*0.55,headY-headR*0.15,headR*0.4,headR*0.4);
+      ctx.fillRect(px+headR*0.15,headY-headR*0.15,headR*0.4,headR*0.4);
+    } else {
+      ctx.fillStyle=hair; ctx.beginPath(); ctx.arc(px,headY-headR*0.32,headR*0.98,Math.PI,0); ctx.fill();
+      if(e.race===RACE.ORC){ ctx.fillStyle="#eef0d6"; ctx.fillRect(px-headR*0.9,headY+headR*0.2,headR*0.35,headR*0.5); ctx.fillRect(px+headR*0.55,headY+headR*0.2,headR*0.35,headR*0.5); }
+    }
+    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-headR*1.1,headY-headR*1.5,headR*2.2,headR*0.62); }
+    if(e.role==="mage"){ ctx.fillStyle="#c58cff"; ctx.fillRect(px+1.55*s*giant,py-legH-bodyH*0.95,0.85*s,bodyH*0.95); }
+    else if(e.role==="soldier"){
+      ctx.strokeStyle=e.equipment==="musket"?"#d9c48a":"#c9ccd2"; ctx.lineWidth=Math.max(1,0.95*s);
+      ctx.beginPath(); ctx.moveTo(px+1.55*s*giant,py-legH*0.3); ctx.lineTo(px+1.55*s*giant,py-legH-bodyH*0.9); ctx.stroke();
+    }
+    if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.4)"; ctx.fillRect(px-1.65*s*giant,py-legH-bodyH,3.3*s*giant,bodyH); }
   }
 }
 
@@ -3528,10 +3594,17 @@ class UIManager{
       else g.camera.fit(g.renderer.cw,g.renderer.ch);
     });
 
-    // 3D isometric block view toggle
+    // 3D isometric block view toggle + camera controls
     document.getElementById("btn-3d").addEventListener("click",()=>this.toggle3D());
     document.getElementById("tiltSlider").addEventListener("input",(ev)=>{
       g.camera.iso.tilt=(+ev.target.value)/100;
+    });
+    const TAU=Math.PI*2;
+    document.getElementById("iso-rot-l").addEventListener("click",()=>{
+      g.camera.iso.angle=(g.camera.iso.angle-Math.PI/2+TAU*2)%TAU;
+    });
+    document.getElementById("iso-rot-r").addEventListener("click",()=>{
+      g.camera.iso.angle=(g.camera.iso.angle+Math.PI/2)%TAU;
     });
 
     // brush slider
@@ -3717,7 +3790,7 @@ class UIManager{
     document.getElementById("btn-3d").classList.toggle("active",on);
     document.getElementById("tiltctrl").classList.toggle("hidden",!on);
     document.getElementById("hint").textContent = on
-      ? "3D Block View — drag to pan · scroll to zoom · click to use power"
+      ? "3D Block View — drag to pan · ⟲⟳ to rotate · scroll to zoom · click to use power"
       : "Blank canvas — paint terrain & place life · Middle-drag pan · Scroll zoom";
     this.toast(on ? "🧊 3D Block View" : "🗺️ Flat Map View");
   }
