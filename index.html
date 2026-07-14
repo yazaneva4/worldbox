@@ -446,7 +446,7 @@ body{
 
   <!-- ===================  LEFT GOD POWERS  ============================= -->
   <div id="leftpanel">
-    <h1 class="pixel">⚡ God Powers</h1>
+    <h1 class="pixel">⚡ Your Powers</h1>
     <div class="godpowers" id="godpowers"><!-- tools injected by UIManager --></div>
     <div id="culturebox">
       <div class="cbtitle">🧬 Culture <span class="cbhint">applied to new civilizations</span></div>
@@ -456,7 +456,7 @@ body{
     <div id="brushbox">
       <label>Brush <input type="range" id="brushSize" min="0" max="4" value="1"><span id="brushVal">1</span></label>
     </div>
-    <div id="tooldesc">Select a <b>God Power</b> and click the world to shape it.</div>
+    <div id="tooldesc">Select one of <b>Your Powers</b> and click the world to shape it.</div>
   </div>
 
   <!-- ===================  CENTER VIEWPORT  ============================= -->
@@ -471,7 +471,7 @@ body{
     <div id="toast"></div>
 
     <!-- mobile drawer toggles (hidden on desktop) -->
-    <button class="m-toggle" id="m-powers" title="God Powers">⚡</button>
+    <button class="m-toggle" id="m-powers" title="Your Powers">⚡</button>
     <button class="m-toggle" id="m-realms" title="Realms &amp; Chronicle">📜</button>
     <div id="m-scrim"></div>
 
@@ -511,7 +511,7 @@ body{
           </button>
         </div>
         <div class="wtips">
-          <b>How to play:</b> pick a <b>God Power</b> on the left, then click the world.
+          <b>How to play:</b> pick one of <b>Your Powers</b> on the left, then click the world.
           Paint <b>Grass &amp; Trees</b> to make land habitable, drop <b>Humans</b> or <b>Elves</b>, then press
           <b>▶ Play</b> and watch villages grow into kingdoms. Unleash <b>Disasters</b> to test them.
         </div>
@@ -2366,8 +2366,10 @@ class Camera{
   }
   fit(vw,vh){
     let z=Math.min(vw/this.worldPxW(), vh/this.worldPxH())*0.98;
-    // start on the flat surface (above the globe threshold), not the planet
-    this.zoom=clamp(Math.max(z,0.56),this.minZoom,this.maxZoom);
+    // Start on the flat surface just above the globe threshold (never in the
+    // planet), but as zoomed-out as that allows — shows more of the world on
+    // every device, especially the small viewport on a phone.
+    this.zoom=clamp(Math.max(z,0.52),this.minZoom,this.maxZoom);
     this.x=(this.worldPxW()-vw/this.zoom)/2;
     this.y=(this.worldPxH()-vh/this.zoom)/2;
   }
@@ -2392,6 +2394,10 @@ class Renderer{
     this.globeRot=0;                // longitude rotation of the planet
     this._globeLUT=null;            // precomputed per-pixel sphere geometry
     this.stars=null;                // cached starfield
+    // logical (CSS-pixel) viewport size — every camera/input calculation uses
+    // THIS, never the raw canvas.width/height, which is inflated by dpr below
+    // so the game renders crisp instead of blocky on high-density phone screens.
+    this.dpr=1; this.cw=0; this.ch=0;
   }
   // zoom thresholds for the flat↔globe crossfade
   get GLOBE_HI(){ return 0.50; }    // below this, globe starts fading in
@@ -2399,7 +2405,12 @@ class Renderer{
   globeAlpha(){ return clamp((this.GLOBE_HI-this.game.camera.zoom)/(this.GLOBE_HI-this.GLOBE_LO),0,1); }
   resize(){
     const c=this.canvas, p=c.parentElement;
-    c.width=p.clientWidth; c.height=p.clientHeight;
+    this.cw=p.clientWidth; this.ch=p.clientHeight;
+    // Match the canvas backing-store resolution to the device's actual pixel
+    // density so pixel-art tiles stay crisp instead of blurry/blocky on
+    // phones (devicePixelRatio 2-3), which otherwise reads as "too zoomed".
+    this.dpr=window.devicePixelRatio||1;
+    c.width=Math.round(this.cw*this.dpr); c.height=Math.round(this.ch*this.dpr);
     this.ctx.imageSmoothingEnabled=false;
   }
 
@@ -2667,10 +2678,12 @@ class Renderer{
     ctx.fillStyle="#0c0d10";
     ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
 
-    // camera transform (with screen shake)
+    // camera transform (with screen shake) — scaled by dpr so the logical
+    // (CSS-pixel) camera math is unaffected while the raster stays crisp
     let shx=0,shy=0;
     if(cam.shakeAmt>0){ shx=(Math.random()-0.5)*cam.shakeAmt; shy=(Math.random()-0.5)*cam.shakeAmt; }
-    ctx.setTransform(cam.zoom,0,0,cam.zoom, -cam.x*cam.zoom+shx, -cam.y*cam.zoom+shy);
+    const dpr=this.dpr;
+    ctx.setTransform(cam.zoom*dpr,0,0,cam.zoom*dpr, (-cam.x*cam.zoom+shx)*dpr, (-cam.y*cam.zoom+shy)*dpr);
 
     // terrain blit
     ctx.imageSmoothingEnabled=false;
@@ -2703,8 +2716,8 @@ class Renderer{
     const cam=this.game.camera, T=CONFIG.TILE;
     const x0=Math.max(0,Math.floor(cam.x/T)-1);
     const y0=Math.max(0,Math.floor(cam.y/T)-1);
-    const x1=Math.min(this.game.world.w-1,Math.ceil((cam.x+this.canvas.width/cam.zoom)/T)+1);
-    const y1=Math.min(this.game.world.h-1,Math.ceil((cam.y+this.canvas.height/cam.zoom)/T)+1);
+    const x1=Math.min(this.game.world.w-1,Math.ceil((cam.x+this.cw/cam.zoom)/T)+1);
+    const y1=Math.min(this.game.world.h-1,Math.ceil((cam.y+this.ch/cam.zoom)/T)+1);
     return {x0,y0,x1,y1};
   }
 
@@ -2742,7 +2755,7 @@ class Renderer{
 
   _entities(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
-    const vw=this.canvas.width/cam.zoom, vh=this.canvas.height/cam.zoom;
+    const vw=this.cw/cam.zoom, vh=this.ch/cam.zoom;
     const camx=cam.x, camy=cam.y;
     // Level-of-detail: only draw the chunky pixel-art character when zoomed in
     // enough to see it; otherwise a cheap coloured dot keeps huge crowds fast.
@@ -2849,7 +2862,7 @@ class Renderer{
   _labels(ctx){
     const T=CONFIG.TILE, cam=this.game.camera;
     if(cam.zoom<0.4) return;                    // very zoomed out → globe handles it
-    const camx=cam.x, camy=cam.y, vw=this.canvas.width/cam.zoom, vh=this.canvas.height/cam.zoom;
+    const camx=cam.x, camy=cam.y, vw=this.cw/cam.zoom, vh=this.ch/cam.zoom;
     const sel=this.game.ui.selectedKingdom;
     // Keep banners a roughly constant on-screen size so realm names stay
     // legible even zoomed out; show only the major realms when far out.
@@ -3236,7 +3249,7 @@ class UIManager{
     // zoom controls
     document.getElementById("zoom-in").addEventListener("click",()=>this._zoomBy(1.25));
     document.getElementById("zoom-out").addEventListener("click",()=>this._zoomBy(0.8));
-    document.getElementById("zoom-home").addEventListener("click",()=>{g.camera.fit(cv.width,cv.height);});
+    document.getElementById("zoom-home").addEventListener("click",()=>{g.camera.fit(g.renderer.cw,g.renderer.ch);});
 
     // brush slider
     const bs=document.getElementById("brushSize");
@@ -3277,7 +3290,7 @@ class UIManager{
         g.camera.x-=(ev.clientX-lastX)/g.camera.zoom;
         g.camera.y-=(ev.clientY-lastY)/g.camera.zoom;
         lastX=ev.clientX; lastY=ev.clientY;
-        g.camera.clampCam(cv.width,cv.height);
+        g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       } else if(painting && sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
         applyAt(sx,sy);
       }
@@ -3295,7 +3308,7 @@ class UIManager{
       const after=g.camera.screenToTile(sx,sy);
       g.camera.x += (before.x-after.x)*CONFIG.TILE;
       g.camera.y += (before.y-after.y)*CONFIG.TILE;
-      g.camera.clampCam(cv.width,cv.height);
+      g.camera.clampCam(g.renderer.cw,g.renderer.ch);
     },{passive:false});
 
     // keyboard shortcuts
@@ -3335,12 +3348,12 @@ class UIManager{
         g.camera.zoom=clamp(g.camera.zoom*(d/(pinchD||d)),g.camera.minZoom,g.camera.maxZoom);
         const after=g.camera.screenToTile(sx,sy);
         g.camera.x+=(before.x-after.x)*CONFIG.TILE; g.camera.y+=(before.y-after.y)*CONFIG.TILE;
-        pinchD=d; g.camera.clampCam(cv.width,cv.height);
+        pinchD=d; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       } else if(ev.touches.length===1){
         const t=ev.touches[0], dx=t.clientX-tLastX, dy=t.clientY-tLastY;
         if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6) tMoved=true;
         g.camera.x-=dx/g.camera.zoom; g.camera.y-=dy/g.camera.zoom;
-        tLastX=t.clientX; tLastY=t.clientY; g.camera.clampCam(cv.width,cv.height);
+        tLastX=t.clientX; tLastY=t.clientY; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       }
     },{passive:false});
     cv.addEventListener("touchend",(ev)=>{
@@ -3369,13 +3382,13 @@ class UIManager{
 
     window.addEventListener("resize",()=>{
       g.renderer.resize();
-      g.camera.clampCam(cv.width,cv.height);
+      g.camera.clampCam(g.renderer.cw,g.renderer.ch);
     });
   }
 
   _zoomBy(f,recentre=true){
-    const g=this.game, cv=g.renderer.canvas;
-    const cx=cv.width/2, cy=cv.height/2;
+    const g=this.game;
+    const cx=g.renderer.cw/2, cy=g.renderer.ch/2;
     const before=recentre? g.camera.screenToTile(cx,cy):null;
     g.camera.zoom=clamp(g.camera.zoom*f,g.camera.minZoom,g.camera.maxZoom);
     if(recentre){
@@ -3383,7 +3396,7 @@ class UIManager{
       g.camera.x+=(before.x-after.x)*CONFIG.TILE;
       g.camera.y+=(before.y-after.y)*CONFIG.TILE;
     }
-    g.camera.clampCam(cv.width,cv.height);
+    g.camera.clampCam(g.renderer.cw,g.renderer.ch);
   }
 
   /* --- apply the current god power at a tile (respecting brush size) ----- */
@@ -3502,7 +3515,7 @@ class UIManager{
   /* onboarding overlay control — freeze time while the chooser is shown so the
      blank world stays truly static until the player begins. */
   showWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.remove("hidden"); this.game.sim.paused=true; this.syncControls(); }
-  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.game.sim.paused=false; this.syncControls(); this.toast("Pick a God Power and click the world"); }
+  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.game.sim.paused=false; this.syncControls(); this.toast("Pick one of Your Powers and click the world"); }
 
   /* --- kingdom inspector ------------------------------------------------- */
   _inspectAt(cx,cy){
@@ -3590,7 +3603,7 @@ class UIManager{
         const k=this.game.settlements.kingdoms.find(z=>z.id===+card.dataset.kid);
         if(!k||!k.alive)return;
         this.selectKingdom(k);
-        const cap=k.capital; if(cap) this.game.camera.centerOn(cap.cx,cap.cy,this.game.renderer.canvas.width,this.game.renderer.canvas.height);
+        const cap=k.capital; if(cap) this.game.camera.centerOn(cap.cx,cap.cy,this.game.renderer.cw,this.game.renderer.ch);
       });
     });
   }
@@ -3618,7 +3631,7 @@ class Game{
     // view
     this.renderer=new Renderer(this,document.getElementById("world"));
     this.renderer.resize();
-    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+    this.camera.fit(this.renderer.cw,this.renderer.ch);
 
     // UI last (needs renderer + managers)
     this.ui=new UIManager(this);
@@ -3664,7 +3677,7 @@ class Game{
     this._buildWorld(mode);
     this.renderer=new Renderer(this,document.getElementById("world"));
     this.renderer.resize();
-    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+    this.camera.fit(this.renderer.cw,this.renderer.ch);
     if(this.ui){
       this.ui.selectedSettlement=null;
       this.ui.renderChronicle(); this.ui.renderKingdoms(); this.ui.renderAchievements();
@@ -3682,7 +3695,7 @@ class Game{
   /* Generate button -> forge a fresh EARTH (still unpopulated). */
   generateWorld(){
     this._remake("earth");
-    this.camera.fit(this.renderer.canvas.width,this.renderer.canvas.height);
+    this.camera.fit(this.renderer.cw,this.renderer.ch);
     this.chronicle.log("🌍 The Earth takes shape — continents, oceans and every biome under the sun.","found");
     this.ui.toast("Earth generated · zoom out to see the planet");
   }
