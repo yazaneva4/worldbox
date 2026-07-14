@@ -231,24 +231,6 @@ body{
 #zoomctrl button:hover{background:var(--panel-3)}
 #zoomctrl button:active{transform:translateY(2px);box-shadow:none}
 
-/* 3D relief-tilt control (shown only in 3D mode) */
-#tiltctrl{
-  position:absolute;right:10px;bottom:10px;z-index:5;
-  display:flex;align-items:center;gap:7px;
-  background:var(--panel);border:2px solid var(--border);border-radius:6px;
-  padding:6px 10px;box-shadow:0 2px 0 rgba(0,0,0,.4);
-}
-#tiltctrl.hidden{display:none}
-#tiltctrl .tiltlabel{font-size:11px;color:var(--text-dim);white-space:nowrap}
-#tiltctrl input[type=range]{width:110px}
-#tiltctrl button{
-  width:26px;height:26px;font-size:14px;flex:none;
-  background:var(--panel-3);color:var(--text);
-  border:1px solid var(--border);border-radius:5px;cursor:pointer;
-}
-#tiltctrl button:hover{background:#4a4d55}
-#tiltctrl button:active{transform:translateY(1px)}
-
 /* on-canvas hint */
 #hint{
   position:absolute;right:10px;bottom:10px;z-index:5;
@@ -459,7 +441,6 @@ body{
     <button class="ctrlbtn pixel" id="btn-s2" data-speed="2">x2</button>
     <button class="ctrlbtn pixel" id="btn-s5" data-speed="5">x5</button>
     <button class="ctrlbtn pixel" id="btn-generate" title="Forge a fresh Earth — continents, oceans & biomes">🌍 Earth</button>
-    <button class="ctrlbtn pixel" id="btn-3d" title="Toggle 3D isometric block view">🧊 3D</button>
     <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the world back to a blank canvas">↻ Reset</button>
   </div>
 
@@ -485,14 +466,6 @@ body{
       <button id="zoom-in"  title="Zoom In">＋</button>
       <button id="zoom-out" title="Zoom Out">－</button>
       <button id="zoom-home" title="Reset Camera">⌂</button>
-    </div>
-    <!-- 3D-only camera controls (hidden while in the flat/2D view): rotate
-         the view 90° at a time, and a relief slider to exaggerate/flatten it -->
-    <div id="tiltctrl" class="hidden">
-      <button id="iso-rot-l" title="Rotate view left">⟲</button>
-      <span class="tiltlabel">⛰️ Relief</span>
-      <input type="range" id="tiltSlider" min="40" max="180" value="100">
-      <button id="iso-rot-r" title="Rotate view right">⟳</button>
     </div>
     <div id="hint">Blank canvas — paint terrain &amp; place life · Middle-drag pan · Scroll zoom</div>
     <div id="toast"></div>
@@ -828,19 +801,6 @@ const BIOME_COL = {
 // Pre-parsed RGB triples per biome, for fast per-pixel globe sampling.
 const BIOME_RGB = {};
 for(const k in BIOME_COL){ const n=parseInt(BIOME_COL[k][0].slice(1),16); BIOME_RGB[k]=[(n>>16)&255,(n>>8)&255,n&255]; }
-
-/* Per-biome elevation (in tile-height units), used only by the 3D isometric
-   block renderer to give the terrain visible relief — oceans sit low,
-   mountains and rocky/volcanic ground rise up, everything else is near sea
-   level. Purely cosmetic; the flat-map simulation logic never reads this. */
-const BIOME_ELEV = {
-  [BIOME.DEEP_WATER]:-1.6, [BIOME.WATER]:-1.1, [BIOME.SAND]:-0.15,
-  [BIOME.GRASS]:0, [BIOME.FERTILE]:0.05, [BIOME.FOREST_FLOOR]:0.1,
-  [BIOME.ROCK]:0.9, [BIOME.ASH]:0.35, [BIOME.LAVA]:-0.2, [BIOME.CRATER]:-0.5,
-  [BIOME.SNOW]:0.6, [BIOME.DIRT]:-0.05, [BIOME.SAVANNA]:0.05, [BIOME.JUNGLE]:0.15,
-  [BIOME.DESERT]:0.1, [BIOME.TUNDRA]:0.3, [BIOME.MOUNTAIN]:1.7, [BIOME.CANDY]:0.1,
-  [BIOME.SWAMP]:-0.25,
-};
 
 /* --------------------------------------------------------------------------
    3.  TILE  —  a single cell of the world grid
@@ -2382,13 +2342,7 @@ class Camera{
     this.zoom=1;
     this.minZoom=0.16; this.maxZoom=4;   // low min so you can zoom out to the globe
     this.shakeAmt=0;
-    // 3D (isometric block) mode has its own independent pan/zoom/tilt/angle,
-    // since its projection is fundamentally different from the flat top-down
-    // camera. `angle` is the camera's yaw (radians) — rotating it lets you
-    // orbit around the world.
-    this.iso={ x:0, y:0, zoom:1, tilt:1, angle:0, minZoom:0.35, maxZoom:3 };
   }
-  resetIso(){ this.iso.x=0; this.iso.y=0; this.iso.zoom=1; this.iso.tilt=1; this.iso.angle=0; }
   shake(a){ this.shakeAmt=Math.max(this.shakeAmt,a); }
   update(dt){ if(this.shakeAmt>0) this.shakeAmt=Math.max(0,this.shakeAmt-dt*40); }
   /* Centre the view on a tile (used by the Realms list). */
@@ -2444,14 +2398,11 @@ class Renderer{
     // THIS, never the raw canvas.width/height, which is inflated by dpr below
     // so the game renders crisp instead of blocky on high-density phone screens.
     this.dpr=1; this.cw=0; this.ch=0;
-    // 3D isometric block view: "flat" (default top-down) or "iso" (3D blocks)
-    this.mode="flat";
-    this.ISO_TW=30; this.ISO_TH=15; this.ISO_ELEV=13; this.ISO_WALL=11; // base tile diamond size / elevation & wall px
   }
   // zoom thresholds for the flat↔globe crossfade
   get GLOBE_HI(){ return 0.50; }    // below this, globe starts fading in
   get GLOBE_LO(){ return 0.30; }    // at/below this, only the globe shows
-  globeAlpha(){ return this.mode==="iso"?0:clamp((this.GLOBE_HI-this.game.camera.zoom)/(this.GLOBE_HI-this.GLOBE_LO),0,1); }
+  globeAlpha(){ return clamp((this.GLOBE_HI-this.game.camera.zoom)/(this.GLOBE_HI-this.GLOBE_LO),0,1); }
   resize(){
     const c=this.canvas, p=c.parentElement;
     this.cw=p.clientWidth; this.ch=p.clientHeight;
@@ -2711,7 +2662,6 @@ class Renderer{
   render(){
     const ctx=this.ctx, cam=this.game.camera, T=CONFIG.TILE;
     this.frame++;
-    if(this.mode==="iso"){ this.renderIso(); return; }
     // Terrain: a full repaint only on world-scale changes (throttled); the
     // frequent, localized changes (building, chopping, painting) redraw just
     // their own tiles every frame — cheap even on a huge map.
@@ -3143,296 +3093,6 @@ class Renderer{
       const n=parseInt(s.color.slice(1),16); m[s.id]=[(n>>16)&255,(n>>8)&255,n&255]; }
     return m;
   }
-
-  /* ==========================================================================
-     3D MODE — an isometric block/voxel view of the SAME world & simulation.
-     No WebGL/engine needed: each tile is drawn as a small cube (a top diamond
-     face + two shaded side walls) at a height derived from its biome, with
-     resources/structures as simple props and creatures as tiny billboards.
-     Painting tools, kingdoms, roads, disasters — everything works exactly as
-     in the flat view; this is purely an alternate camera + renderer.
-     ========================================================================== */
-
-  /* Elevation (in tile-height units) used only for the 3D block relief. */
-  _isoElev(t){
-    let e=BIOME_ELEV[t.biome]||0;
-    if(t.structure && t.structure!==STRUCT.ROAD && t.structure!==STRUCT.RUIN) e+=0.32;
-    if(t.structure===STRUCT.PALACE) e+=0.55;
-    if(t.structure===STRUCT.WATCHTOWER||t.structure===STRUCT.MAGE_TOWER) e+=0.6;
-    return e;
-  }
-
-  /* Blend two hex colours (territory tint on the iso top face). */
-  _mix(hexA,hexB,t){
-    const a=parseInt(hexA.slice(1),16), b=parseInt(hexB.slice(1),16);
-    const ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255, br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
-    return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
-  }
-
-  /* The two screen-space basis vectors for +1 world-X and +1 world-Y, rotated
-     by the camera's current yaw angle. At angle 0 these reduce to the classic
-     (tx-ty)*hw / (tx+ty)*hh diamond projection; rotating them lets the whole
-     iso camera orbit around the world instead of being stuck at one angle. */
-  _isoBasis(){
-    const a=this.game.camera.iso.angle, hw=this.ISO_TW/2, hh=this.ISO_TH/2;
-    const c=Math.cos(a), s=Math.sin(a);
-    return {
-      ex:{ x: hw*c - hh*s,  y: hw*s + hh*c  },   // +1 tx
-      ez:{ x: -hw*c - hh*s, y: -hw*s + hh*c },   // +1 ty
-    };
-  }
-
-  /* Screen point (logical CSS px) → tile coords. Ignores per-tile elevation
-     (standard iso hit-test approximation — at most ~1 tile off on tall relief,
-     imperceptible for painting/inspecting). Mirrors the exact forward
-     projection used by renderIso() so clicks land where they visually look,
-     at any camera rotation. */
-  isoScreenToTile(sx,sy){
-    const iso=this.game.camera.iso;
-    const {ex,ez}=this._isoBasis();
-    const cx=this.cw/2, cy=this.ch/2;
-    const ux=(sx-cx)/iso.zoom+iso.x, uy=(sy-cy)/iso.zoom+iso.y;
-    const det=ex.x*ez.y-ez.x*ex.y;
-    return { x:Math.floor((ez.y*ux-ez.x*uy)/det), y:Math.floor((-ex.y*ux+ex.x*uy)/det) };
-  }
-
-  renderIso(){
-    const ctx=this.ctx, cam=this.game.camera, iso=cam.iso, w=this.game.world;
-    const dpr=this.dpr, cw=this.cw, ch=this.ch;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    // sky backdrop (cheap to redo each frame; cached gradient object)
-    if(!this._isoSky || this._isoSkyH!==ch){
-      const g=ctx.createLinearGradient(0,0,0,ch);
-      g.addColorStop(0,"#1c2740"); g.addColorStop(0.55,"#26344a"); g.addColorStop(1,"#2e3c52");
-      this._isoSky=g; this._isoSkyH=ch;
-    }
-    ctx.fillStyle=this._isoSky; ctx.fillRect(0,0,cw,ch);
-
-    const zoom=iso.zoom, tilt=iso.tilt;
-    const hw=this.ISO_TW/2, hh=this.ISO_TH/2;
-    const {ex,ez}=this._isoBasis();
-    const cx=cw/2, cy=ch/2;
-    const far = zoom<0.55;                    // LOD: skip walls/props when zoomed way out
-
-    // visible tile bounds via inverse-projecting the 4 screen corners
-    const det=ex.x*ez.y-ez.x*ex.y;
-    const toTile=(sx,sy)=>{
-      const ux=(sx-cx)/zoom+iso.x, uy=(sy-cy)/zoom+iso.y;
-      return { tx:(ez.y*ux-ez.x*uy)/det, ty:(-ex.y*ux+ex.x*uy)/det };
-    };
-    const cns=[toTile(0,0),toTile(cw,0),toTile(0,ch),toTile(cw,ch)];
-    const margin=8;
-    let x0=clamp(Math.floor(Math.min(...cns.map(p=>p.tx)))-margin,0,w.w-1);
-    let x1=clamp(Math.ceil (Math.max(...cns.map(p=>p.tx)))+margin,0,w.w-1);
-    let y0=clamp(Math.floor(Math.min(...cns.map(p=>p.ty)))-margin,0,w.h-1);
-    let y1=clamp(Math.ceil (Math.max(...cns.map(p=>p.ty)))+margin,0,w.h-1);
-
-    // combined painter's-order list: ground tiles + creatures, back-to-front.
-    // Depth = projected screen-Y contribution (before pan/zoom), which stays
-    // a correct back-to-front ordering at any rotation angle.
-    const items=[];
-    for(let ty=y0;ty<=y1;ty++) for(let tx=x0;tx<=x1;tx++) items.push({d:tx*ex.y+ty*ez.y,tx,ty,ent:null});
-    const entBias=hh*0.3;   // tie-break so creatures draw above ground at the same depth
-    for(const e of this.game.entities.list){
-      const etx=e.x|0, ety=e.y|0;
-      if(etx<x0-1||etx>x1+1||ety<y0-1||ety>y1+1) continue;
-      items.push({d:e.x*ex.y+e.y*ez.y+entBias,ent:e});
-    }
-    items.sort((a,b)=>a.d-b.d);
-
-    for(const it of items){
-      if(it.ent) this._isoDrawEntity(ctx,it.ent,zoom,tilt,iso,cx,cy,ex,ez);
-      else this._isoDrawTile(ctx,it.tx,it.ty,zoom,tilt,iso,cx,cy,hw,hh,ex,ez,far);
-    }
-
-    // hover cursor: a diamond outline on the tile under the pointer
-    const hv=this.game.ui.hoverTile;
-    if(hv){
-      const t=w.get(hv.x,hv.y);
-      if(t){
-        const elev=this._isoElev(t);
-        const gx0=(hv.x+0.5)*ex.x+(hv.y+0.5)*ez.x, gy0=(hv.x+0.5)*ex.y+(hv.y+0.5)*ez.y;
-        const px=cx+(gx0-iso.x)*zoom, py=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
-        const w2=hw*zoom, h2=hh*zoom;
-        ctx.strokeStyle="rgba(255,255,255,0.75)"; ctx.lineWidth=1.5;
-        ctx.beginPath();
-        ctx.moveTo(px,py-h2); ctx.lineTo(px+w2,py); ctx.lineTo(px,py+h2); ctx.lineTo(px-w2,py);
-        ctx.closePath(); ctx.stroke();
-      }
-    }
-
-    // small mode caption, bottom-left, so it's clear you're in 3D
-    ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.font="10px 'Courier New',monospace"; ctx.textAlign="left";
-    ctx.fillText("🧊 3D BLOCK VIEW — drag to pan · right-drag to orbit · scroll to zoom",10,ch-10);
-  }
-
-  _isoDrawTile(ctx,tx,ty,zoom,tilt,iso,cx,cy,hw,hh,ex,ez,far){
-    const w=this.game.world, t=w.get(tx,ty); if(!t) return;
-    const gx0=tx*ex.x+ty*ez.x, gy0=tx*ex.y+ty*ez.y;
-    const elev=this._isoElev(t);
-    const px=cx+(gx0-iso.x)*zoom;
-    const topY=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
-    const w2=hw*zoom, h2=hh*zoom;
-
-    let fillTop;
-    if(t.structure===STRUCT.ROAD) fillTop="#9a8968";
-    else { const cols=BIOME_COL[t.biome]||BIOME_COL[BIOME.GRASS]; fillTop=((tx+ty+(t.variant||0))&1)?cols[0]:cols[1]; }
-    if(t.owner>=0){
-      const s=this.game.settlements.list.find(z=>z.id===t.owner);
-      if(s && !s.destroyed) fillTop=this._mix(fillTop,s.color,0.30);
-    }
-
-    // top face
-    ctx.fillStyle=fillTop;
-    ctx.beginPath();
-    ctx.moveTo(px,topY-h2); ctx.lineTo(px+w2,topY); ctx.lineTo(px,topY+h2); ctx.lineTo(px-w2,topY);
-    ctx.closePath(); ctx.fill();
-
-    if(far) return;   // zoomed way out: flat diamond mosaic only, skip walls/props (perf)
-
-    const wallH=this.ISO_WALL*tilt*zoom;
-    ctx.fillStyle=this._shade(fillTop,0.72);
-    ctx.beginPath();
-    ctx.moveTo(px-w2,topY); ctx.lineTo(px,topY+h2); ctx.lineTo(px,topY+h2+wallH); ctx.lineTo(px-w2,topY+wallH);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle=this._shade(fillTop,0.5);
-    ctx.beginPath();
-    ctx.moveTo(px+w2,topY); ctx.lineTo(px,topY+h2); ctx.lineTo(px,topY+h2+wallH); ctx.lineTo(px+w2,topY+wallH);
-    ctx.closePath(); ctx.fill();
-
-    // disaster tints on the top face
-    if(t.burn>0){
-      ctx.fillStyle=`rgba(255,90,30,${0.4*Math.min(1,t.burn)})`;
-      ctx.beginPath(); ctx.moveTo(px,topY-h2); ctx.lineTo(px+w2,topY); ctx.lineTo(px,topY+h2); ctx.lineTo(px-w2,topY); ctx.closePath(); ctx.fill();
-    } else if(t.acid>0){
-      ctx.fillStyle="rgba(158,203,58,0.32)";
-      ctx.beginPath(); ctx.moveTo(px,topY-h2); ctx.lineTo(px+w2,topY); ctx.lineTo(px,topY+h2); ctx.lineTo(px-w2,topY); ctx.closePath(); ctx.fill();
-    }
-
-    if(t.resource) this._isoResourceProp(ctx,t.resource,px,topY,zoom);
-    if(t.structure && t.structure!==STRUCT.ROAD) this._isoStructureProp(ctx,t.structure,px,topY,zoom);
-  }
-
-  _isoResourceProp(ctx,res,px,topY,s){
-    switch(res){
-      case RES.TREE:
-        ctx.fillStyle="#5b3a1e"; ctx.fillRect(px-1*s,topY-6*s,2*s,4*s);
-        ctx.fillStyle="#2f6d2a"; ctx.beginPath(); ctx.arc(px,topY-9*s,5*s,0,7); ctx.fill();
-        ctx.fillStyle="#3f8a35"; ctx.beginPath(); ctx.arc(px-1.5*s,topY-10*s,3*s,0,7); ctx.fill();
-        break;
-      case RES.PINE:
-        ctx.fillStyle="#4a2f18"; ctx.fillRect(px-1*s,topY-5*s,2*s,4*s);
-        ctx.fillStyle="#2a5f34"; ctx.beginPath(); ctx.moveTo(px,topY-14*s); ctx.lineTo(px-4*s,topY-6*s); ctx.lineTo(px+4*s,topY-6*s); ctx.fill();
-        break;
-      case RES.STONE:
-        ctx.fillStyle="#8b8792"; ctx.beginPath(); ctx.ellipse(px,topY-3*s,4*s,3*s,0,0,7); ctx.fill();
-        ctx.fillStyle="#6f6b78"; ctx.beginPath(); ctx.ellipse(px-1.5*s,topY-3.5*s,1.6*s,1.2*s,0,0,7); ctx.fill();
-        break;
-      case RES.FLOWER:
-        ctx.fillStyle="#ff6f9c"; ctx.beginPath(); ctx.arc(px,topY-2*s,2*s,0,7); ctx.fill();
-        break;
-      case RES.BUSH:
-        ctx.fillStyle="#3f7a34"; ctx.beginPath(); ctx.arc(px,topY-3*s,3.4*s,0,7); ctx.fill();
-        ctx.fillStyle="#c0304a"; ctx.beginPath(); ctx.arc(px+1.2*s,topY-3.6*s,0.8*s,0,7); ctx.fill();
-        break;
-    }
-  }
-
-  _isoStructureProp(ctx,sid,px,topY,s){
-    const box=(bw,bh,col,roofCol)=>{
-      ctx.fillStyle=col; ctx.fillRect(px-bw/2*s,topY-bh*s,bw*s,bh*s);
-      if(roofCol){ ctx.fillStyle=roofCol; ctx.beginPath(); ctx.moveTo(px-(bw/2+1)*s,topY-bh*s); ctx.lineTo(px,topY-(bh+4)*s); ctx.lineTo(px+(bw/2+1)*s,topY-bh*s); ctx.fill(); }
-    };
-    switch(sid){
-      case STRUCT.TENT: box(7,5,"#b58a4a",null); break;
-      case STRUCT.HOUSE: box(8,7,"#7a5230","#c0392b"); break;
-      case STRUCT.PALACE: box(11,12,"#9a7a4a","#d9b45c"); break;
-      case STRUCT.TOWNHALL:
-        box(10,9,"#8a6a3a","#caa24a");
-        ctx.fillStyle="#4fc3f7"; ctx.fillRect(px-0.5*s,topY-15*s,1*s,4*s);
-        break;
-      case STRUCT.FARM:
-        ctx.fillStyle="#6b4a28"; ctx.fillRect(px-6*s,topY-1*s,12*s,2*s);
-        ctx.fillStyle="#a9c24a"; for(let i=0;i<3;i++) ctx.fillRect(px-5*s+i*4*s,topY-4*s,1.6*s,4*s);
-        break;
-      case STRUCT.WINDMILL:{
-        ctx.fillStyle="#8a7250"; ctx.fillRect(px-1.4*s,topY-10*s,2.8*s,10*s);
-        ctx.strokeStyle="#e6d9b0"; ctx.lineWidth=Math.max(1,1.2*s);
-        const a=this.frame*0.1;
-        for(let i=0;i<4;i++){ const an=a+i*Math.PI/2; ctx.beginPath(); ctx.moveTo(px,topY-10*s); ctx.lineTo(px+Math.cos(an)*4*s,topY-10*s+Math.sin(an)*4*s); ctx.stroke(); }
-        break; }
-      case STRUCT.STOREHOUSE: box(9,6,"#6b5334",null); break;
-      case STRUCT.BARRACKS: box(9,7,"#5b5f66",null); ctx.fillStyle="#ff5c5c"; ctx.fillRect(px-0.5*s,topY-11*s,1*s,3*s); break;
-      case STRUCT.WATCHTOWER:
-        ctx.fillStyle="#7a6a52"; ctx.fillRect(px-1.4*s,topY-14*s,2.8*s,14*s);
-        ctx.fillStyle="#9a8a6a"; ctx.fillRect(px-2.2*s,topY-15*s,4.4*s,2*s);
-        break;
-      case STRUCT.WALL: ctx.fillStyle="#8f8a80"; ctx.fillRect(px-7*s,topY-5*s,14*s,5*s); break;
-      case STRUCT.SHRINE:
-        box(8,7,"#5a5a86",null);
-        ctx.fillStyle="#c58cff"; ctx.beginPath(); ctx.moveTo(px-4*s,topY-7*s); ctx.lineTo(px,topY-12*s); ctx.lineTo(px+4*s,topY-7*s); ctx.fill();
-        break;
-      case STRUCT.MAGE_TOWER:
-        ctx.fillStyle="#4a4a7a"; ctx.fillRect(px-2.6*s,topY-13*s,5.2*s,13*s);
-        ctx.fillStyle="#6a5fae"; ctx.beginPath(); ctx.moveTo(px-2.6*s,topY-13*s); ctx.lineTo(px,topY-18*s); ctx.lineTo(px+2.6*s,topY-13*s); ctx.fill();
-        break;
-      case STRUCT.RUIN:
-        ctx.fillStyle="#4a4448"; ctx.fillRect(px-3*s,topY-4*s,2.5*s,4*s); ctx.fillRect(px+1*s,topY-5*s,2.5*s,5*s);
-        break;
-    }
-  }
-
-  /* A small "little person" billboard: legs, kingdom-coloured torso, and a
-     round head in the creature's ACTUAL skin tone with its own hair colour —
-     reusing the same per-creature appearance the flat view uses, so a 3D
-     crowd looks as varied as the top-down one instead of uniform blobs. */
-  _isoDrawEntity(ctx,e,zoom,tilt,iso,cx,cy,ex,ez){
-    const w=this.game.world, t=w.get(e.x|0,e.y|0);
-    const elev=t? this._isoElev(t):0;
-    const gx0=e.x*ex.x+e.y*ez.x, gy0=e.x*ex.y+e.y*ez.y;
-    const px=cx+(gx0-iso.x)*zoom, py=cy+(gy0-iso.y)*zoom-elev*this.ISO_ELEV*tilt*zoom;
-    const s=zoom, giant=e.has("giant")?1.4:1, cloth=this._raceColor(e);
-
-    if(e.race===RACE.MONSTER){
-      const r=2.7*s*giant;
-      ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(px,py-0.4*s,r*1.1,r*0.45,0,0,7); ctx.fill();
-      ctx.fillStyle=cloth; ctx.beginPath(); ctx.ellipse(px,py-r*1.25,r*1.25,r*0.95,0,0,7); ctx.fill();
-      ctx.fillStyle="#2a0f38"; ctx.fillRect(px-r*0.55,py-r*1.5,r*0.35,r*0.35); ctx.fillRect(px+r*0.2,py-r*1.5,r*0.35,r*0.35);
-      ctx.fillStyle=this._shade(cloth,0.7);
-      ctx.fillRect(px-r*0.95,py-r*2.05,r*0.32,r*0.6); ctx.fillRect(px+r*0.63,py-r*2.05,r*0.32,r*0.6);
-      return;
-    }
-
-    const skin=e.skinCol||"#e8b78c", hair=e.hairCol||"#3a2c1e";
-    const legH=2.1*s*giant, bodyH=4.0*s*giant, headR=1.55*s*giant;
-    ctx.fillStyle="rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(px,py-0.4*s,2.6*s*giant,1.05*s*giant,0,0,7); ctx.fill();
-    // legs
-    ctx.fillStyle="#2c2015";
-    ctx.fillRect(px-1.25*s*giant,py-legH,1.05*s*giant,legH);
-    ctx.fillRect(px+0.2*s*giant, py-legH,1.05*s*giant,legH);
-    // torso (kingdom-coloured clothing)
-    ctx.fillStyle=cloth; ctx.fillRect(px-1.65*s*giant,py-legH-bodyH,3.3*s*giant,bodyH);
-    ctx.fillStyle=this._shade(cloth,0.72); ctx.fillRect(px-1.65*s*giant,py-legH-1.1*s*giant,3.3*s*giant,1.1*s*giant);
-    // head — the creature's actual skin tone, round so it reads as a head
-    const headY=py-legH-bodyH-headR*0.85;
-    ctx.fillStyle=skin; ctx.beginPath(); ctx.arc(px,headY,headR,0,7); ctx.fill();
-    // hair (skip for skeletons — draw eye sockets instead)
-    if(e.race===RACE.SKELETON){
-      ctx.fillStyle="#38342b";
-      ctx.fillRect(px-headR*0.55,headY-headR*0.15,headR*0.4,headR*0.4);
-      ctx.fillRect(px+headR*0.15,headY-headR*0.15,headR*0.4,headR*0.4);
-    } else {
-      ctx.fillStyle=hair; ctx.beginPath(); ctx.arc(px,headY-headR*0.32,headR*0.98,Math.PI,0); ctx.fill();
-      if(e.race===RACE.ORC){ ctx.fillStyle="#eef0d6"; ctx.fillRect(px-headR*0.9,headY+headR*0.2,headR*0.35,headR*0.5); ctx.fillRect(px+headR*0.55,headY+headR*0.2,headR*0.35,headR*0.5); }
-    }
-    if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-headR*1.1,headY-headR*1.5,headR*2.2,headR*0.62); }
-    if(e.role==="mage"){ ctx.fillStyle="#c58cff"; ctx.fillRect(px+1.55*s*giant,py-legH-bodyH*0.95,0.85*s,bodyH*0.95); }
-    else if(e.role==="soldier"){
-      ctx.strokeStyle=e.equipment==="musket"?"#d9c48a":"#c9ccd2"; ctx.lineWidth=Math.max(1,0.95*s);
-      ctx.beginPath(); ctx.moveTo(px+1.55*s*giant,py-legH*0.3); ctx.lineTo(px+1.55*s*giant,py-legH-bodyH*0.9); ctx.stroke();
-    }
-    if(e.hp<35 && (this.frame%12<6)){ ctx.fillStyle="rgba(255,60,60,0.4)"; ctx.fillRect(px-1.65*s*giant,py-legH-bodyH,3.3*s*giant,bodyH); }
-  }
 }
 
 /* ==========================================================================
@@ -3586,26 +3246,10 @@ class UIManager{
     // kingdom inspector close
     document.getElementById("kp-close").addEventListener("click",()=>this.closeKingdomPanel());
 
-    // zoom controls (mode-aware: flat fit-to-world vs iso pan/zoom/tilt reset)
+    // zoom controls
     document.getElementById("zoom-in").addEventListener("click",()=>this._zoomBy(1.25));
     document.getElementById("zoom-out").addEventListener("click",()=>this._zoomBy(0.8));
-    document.getElementById("zoom-home").addEventListener("click",()=>{
-      if(g.renderer.mode==="iso"){ g.camera.resetIso(); document.getElementById("tiltSlider").value=100; }
-      else g.camera.fit(g.renderer.cw,g.renderer.ch);
-    });
-
-    // 3D isometric block view toggle + camera controls
-    document.getElementById("btn-3d").addEventListener("click",()=>this.toggle3D());
-    document.getElementById("tiltSlider").addEventListener("input",(ev)=>{
-      g.camera.iso.tilt=(+ev.target.value)/100;
-    });
-    const TAU=Math.PI*2;
-    document.getElementById("iso-rot-l").addEventListener("click",()=>{
-      g.camera.iso.angle=(g.camera.iso.angle-Math.PI/2+TAU*2)%TAU;
-    });
-    document.getElementById("iso-rot-r").addEventListener("click",()=>{
-      g.camera.iso.angle=(g.camera.iso.angle+Math.PI/2)%TAU;
-    });
+    document.getElementById("zoom-home").addEventListener("click",()=>{g.camera.fit(g.renderer.cw,g.renderer.ch);});
 
     // brush slider
     const bs=document.getElementById("brushSize");
@@ -3621,40 +3265,17 @@ class UIManager{
       });
     });
 
-    // ---- canvas input: paint / pan / orbit / zoom (mode-aware: flat top-down or 3D iso) ----
-    let painting=false, panning=false, orbiting=false, lastX=0,lastY=0;
+    // ---- canvas input: paint / pan / zoom ----
+    let painting=false, panning=false, lastX=0,lastY=0;
 
-    // Single dispatcher so every input handler works in both view modes.
-    const screenToTile=(sx,sy)=> g.renderer.mode==="iso" ? g.renderer.isoScreenToTile(sx,sy) : g.camera.screenToTile(sx,sy);
     const applyAt=(sx,sy)=>{
-      const {x,y}=screenToTile(sx,sy);
+      const {x,y}=g.camera.screenToTile(sx,sy);
       this.applyTool(x,y);
-    };
-    const panBy=(dx,dy)=>{
-      if(g.renderer.mode==="iso"){
-        const iso=g.camera.iso;
-        iso.x-=dx/iso.zoom; iso.y-=dy/iso.zoom;
-      } else {
-        g.camera.x-=dx/g.camera.zoom; g.camera.y-=dy/g.camera.zoom;
-        g.camera.clampCam(g.renderer.cw,g.renderer.ch);
-      }
-    };
-    // Continuous camera orbit (3D mode only) — drag left/right to circle
-    // smoothly around the world at any angle, not just the 90° snap buttons.
-    const orbitBy=(dxScreen)=>{
-      const iso=g.camera.iso, TAU=Math.PI*2;
-      iso.angle=(iso.angle + dxScreen*0.01 + TAU*4)%TAU;
     };
 
     cv.addEventListener("mousedown",(ev)=>{
       const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
-      if(ev.button===1){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
-      else if(ev.button===2){
-        // right-drag orbits the 3D camera around the world; in flat mode it
-        // just pans (there's nothing to orbit around up there).
-        if(g.renderer.mode==="iso") orbiting=true; else panning=true;
-        lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault();
-      }
+      if(ev.button===1 || ev.button===2){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
       else if(ev.button===0){
         // select settlement if clicking near a town hall & using a non-painting inspect? -> left always paints
         painting=true; applyAt(sx,sy);
@@ -3663,19 +3284,18 @@ class UIManager{
     window.addEventListener("mousemove",(ev)=>{
       const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
       if(sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
-        this.hoverTile=screenToTile(sx,sy);
+        this.hoverTile=g.camera.screenToTile(sx,sy);
       } else this.hoverTile=null;
-      if(orbiting){
-        orbitBy(ev.clientX-lastX);
+      if(panning){
+        g.camera.x-=(ev.clientX-lastX)/g.camera.zoom;
+        g.camera.y-=(ev.clientY-lastY)/g.camera.zoom;
         lastX=ev.clientX; lastY=ev.clientY;
-      } else if(panning){
-        panBy(ev.clientX-lastX, ev.clientY-lastY);
-        lastX=ev.clientX; lastY=ev.clientY;
+        g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       } else if(painting && sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
         applyAt(sx,sy);
       }
     });
-    window.addEventListener("mouseup",()=>{painting=false;panning=false;orbiting=false;});
+    window.addEventListener("mouseup",()=>{painting=false;panning=false;});
     cv.addEventListener("contextmenu",e=>e.preventDefault());
     cv.addEventListener("mouseleave",()=>{this.hoverTile=null;});
 
@@ -3683,10 +3303,8 @@ class UIManager{
     cv.addEventListener("wheel",(ev)=>{
       ev.preventDefault();
       const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
-      const f=ev.deltaY<0?1.15:0.87;
-      if(g.renderer.mode==="iso"){ this._isoZoomBy(f,sx,sy); return; }
       const before=g.camera.screenToTile(sx,sy);
-      this._zoomBy(f, false);
+      this._zoomBy(ev.deltaY<0?1.15:0.87, false);
       const after=g.camera.screenToTile(sx,sy);
       g.camera.x += (before.x-after.x)*CONFIG.TILE;
       g.camera.y += (before.y-after.y)*CONFIG.TILE;
@@ -3706,9 +3324,8 @@ class UIManager{
     });
 
     // ---- TOUCH input (mobile): 1-finger drag pans, tap uses the tool,
-    //      two-finger pinch zooms AND (in 3D mode) drags the pair sideways
-    //      to orbit — the same combined pinch+twist feel as a map app ----
-    let tStartX=0,tStartY=0,tLastX=0,tLastY=0,tMoved=false,tStart=0,tMode=null,pinchD=0,pinchMidX=0;
+    //      two-finger pinch zooms around the pinch midpoint ----
+    let tStartX=0,tStartY=0,tLastX=0,tLastY=0,tMoved=false,tStart=0,tMode=null,pinchD=0;
     const rel=(t)=>{ const r=cv.getBoundingClientRect(); return {x:t.clientX-r.left,y:t.clientY-r.top}; };
     const touchDist=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     cv.addEventListener("touchstart",(ev)=>{
@@ -3718,7 +3335,6 @@ class UIManager{
         tMoved=false; tStart=performance.now(); tMode="pan";
       } else if(ev.touches.length===2){
         tMode="pinch"; pinchD=touchDist(ev.touches[0],ev.touches[1]);
-        pinchMidX=(ev.touches[0].clientX+ev.touches[1].clientX)/2;
       }
     },{passive:false});
     cv.addEventListener("touchmove",(ev)=>{
@@ -3728,23 +3344,16 @@ class UIManager{
         const midX=(ev.touches[0].clientX+ev.touches[1].clientX)/2;
         const midY=(ev.touches[0].clientY+ev.touches[1].clientY)/2;
         const r=cv.getBoundingClientRect(), sx=midX-r.left, sy=midY-r.top;
-        const f=d/(pinchD||d);
-        if(g.renderer.mode==="iso"){
-          this._isoZoomBy(f,sx,sy);
-          orbitBy(midX-pinchMidX);          // slide two fingers sideways to orbit
-        } else {
-          const before=g.camera.screenToTile(sx,sy);
-          g.camera.zoom=clamp(g.camera.zoom*f,g.camera.minZoom,g.camera.maxZoom);
-          const after=g.camera.screenToTile(sx,sy);
-          g.camera.x+=(before.x-after.x)*CONFIG.TILE; g.camera.y+=(before.y-after.y)*CONFIG.TILE;
-          g.camera.clampCam(g.renderer.cw,g.renderer.ch);
-        }
-        pinchD=d; pinchMidX=midX;
+        const before=g.camera.screenToTile(sx,sy);
+        g.camera.zoom=clamp(g.camera.zoom*(d/(pinchD||d)),g.camera.minZoom,g.camera.maxZoom);
+        const after=g.camera.screenToTile(sx,sy);
+        g.camera.x+=(before.x-after.x)*CONFIG.TILE; g.camera.y+=(before.y-after.y)*CONFIG.TILE;
+        pinchD=d; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       } else if(ev.touches.length===1){
         const t=ev.touches[0], dx=t.clientX-tLastX, dy=t.clientY-tLastY;
         if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6) tMoved=true;
-        panBy(dx,dy);
-        tLastX=t.clientX; tLastY=t.clientY;
+        g.camera.x-=dx/g.camera.zoom; g.camera.y-=dy/g.camera.zoom;
+        tLastX=t.clientX; tLastY=t.clientY; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       }
     },{passive:false});
     cv.addEventListener("touchend",(ev)=>{
@@ -3779,7 +3388,6 @@ class UIManager{
 
   _zoomBy(f,recentre=true){
     const g=this.game;
-    if(g.renderer.mode==="iso"){ this._isoZoomBy(f,g.renderer.cw/2,g.renderer.ch/2); return; }
     const cx=g.renderer.cw/2, cy=g.renderer.ch/2;
     const before=recentre? g.camera.screenToTile(cx,cy):null;
     g.camera.zoom=clamp(g.camera.zoom*f,g.camera.minZoom,g.camera.maxZoom);
@@ -3789,30 +3397,6 @@ class UIManager{
       g.camera.y+=(before.y-after.y)*CONFIG.TILE;
     }
     g.camera.clampCam(g.renderer.cw,g.renderer.ch);
-  }
-
-  /* Zoom the 3D iso camera by `f`, keeping the world point under screen
-     point (sx,sy) fixed on screen — mirrors the flat wheel-zoom behaviour. */
-  _isoZoomBy(f,sx,sy){
-    const iso=this.game.camera.iso, r=this.game.renderer;
-    const cx=r.cw/2, cy=r.ch/2;
-    const ux=(sx-cx)/iso.zoom+iso.x, uy=(sy-cy)/iso.zoom+iso.y;
-    iso.zoom=clamp(iso.zoom*f, iso.minZoom, iso.maxZoom);
-    iso.x=ux-(sx-cx)/iso.zoom; iso.y=uy-(sy-cy)/iso.zoom;
-  }
-
-  /* Switch between the flat top-down view and the 3D isometric block view.
-     Same World/Kingdom/Entity data underneath — purely a camera+renderer swap. */
-  toggle3D(){
-    const g=this.game, r=g.renderer;
-    r.mode = r.mode==="iso" ? "flat" : "iso";
-    const on = r.mode==="iso";
-    document.getElementById("btn-3d").classList.toggle("active",on);
-    document.getElementById("tiltctrl").classList.toggle("hidden",!on);
-    document.getElementById("hint").textContent = on
-      ? "3D Block View — drag to pan · right-drag/⟲⟳ to orbit · scroll to zoom"
-      : "Blank canvas — paint terrain & place life · Middle-drag pan · Scroll zoom";
-    this.toast(on ? "🧊 3D Block View" : "🗺️ Flat Map View");
   }
 
   /* --- apply the current god power at a tile (respecting brush size) ----- */
@@ -4091,9 +3675,7 @@ class Game{
      Generate buttons and by the welcome overlay. */
   _remake(mode){
     this._buildWorld(mode);
-    const prevViewMode=this.renderer?this.renderer.mode:"flat"; // survive world resets
     this.renderer=new Renderer(this,document.getElementById("world"));
-    this.renderer.mode=prevViewMode;
     this.renderer.resize();
     this.camera.fit(this.renderer.cw,this.renderer.ch);
     if(this.ui){
