@@ -3263,7 +3263,7 @@ class Renderer{
 
     // small mode caption, bottom-left, so it's clear you're in 3D
     ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.font="10px 'Courier New',monospace"; ctx.textAlign="left";
-    ctx.fillText("🧊 3D BLOCK VIEW — drag to pan · ⟲⟳ to rotate · scroll to zoom",10,ch-10);
+    ctx.fillText("🧊 3D BLOCK VIEW — drag to pan · right-drag to orbit · scroll to zoom",10,ch-10);
   }
 
   _isoDrawTile(ctx,tx,ty,zoom,tilt,iso,cx,cy,hw,hh,ex,ez,far){
@@ -3621,8 +3621,8 @@ class UIManager{
       });
     });
 
-    // ---- canvas input: paint / pan / zoom (mode-aware: flat top-down or 3D iso) ----
-    let painting=false, panning=false, lastX=0,lastY=0;
+    // ---- canvas input: paint / pan / orbit / zoom (mode-aware: flat top-down or 3D iso) ----
+    let painting=false, panning=false, orbiting=false, lastX=0,lastY=0;
 
     // Single dispatcher so every input handler works in both view modes.
     const screenToTile=(sx,sy)=> g.renderer.mode==="iso" ? g.renderer.isoScreenToTile(sx,sy) : g.camera.screenToTile(sx,sy);
@@ -3639,10 +3639,22 @@ class UIManager{
         g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       }
     };
+    // Continuous camera orbit (3D mode only) — drag left/right to circle
+    // smoothly around the world at any angle, not just the 90° snap buttons.
+    const orbitBy=(dxScreen)=>{
+      const iso=g.camera.iso, TAU=Math.PI*2;
+      iso.angle=(iso.angle + dxScreen*0.01 + TAU*4)%TAU;
+    };
 
     cv.addEventListener("mousedown",(ev)=>{
       const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
-      if(ev.button===1 || ev.button===2){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
+      if(ev.button===1){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
+      else if(ev.button===2){
+        // right-drag orbits the 3D camera around the world; in flat mode it
+        // just pans (there's nothing to orbit around up there).
+        if(g.renderer.mode==="iso") orbiting=true; else panning=true;
+        lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault();
+      }
       else if(ev.button===0){
         // select settlement if clicking near a town hall & using a non-painting inspect? -> left always paints
         painting=true; applyAt(sx,sy);
@@ -3653,14 +3665,17 @@ class UIManager{
       if(sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
         this.hoverTile=screenToTile(sx,sy);
       } else this.hoverTile=null;
-      if(panning){
+      if(orbiting){
+        orbitBy(ev.clientX-lastX);
+        lastX=ev.clientX; lastY=ev.clientY;
+      } else if(panning){
         panBy(ev.clientX-lastX, ev.clientY-lastY);
         lastX=ev.clientX; lastY=ev.clientY;
       } else if(painting && sx>=0&&sy>=0&&sx<=r.width&&sy<=r.height){
         applyAt(sx,sy);
       }
     });
-    window.addEventListener("mouseup",()=>{painting=false;panning=false;});
+    window.addEventListener("mouseup",()=>{painting=false;panning=false;orbiting=false;});
     cv.addEventListener("contextmenu",e=>e.preventDefault());
     cv.addEventListener("mouseleave",()=>{this.hoverTile=null;});
 
@@ -3691,8 +3706,9 @@ class UIManager{
     });
 
     // ---- TOUCH input (mobile): 1-finger drag pans, tap uses the tool,
-    //      two-finger pinch zooms around the pinch midpoint ----
-    let tStartX=0,tStartY=0,tLastX=0,tLastY=0,tMoved=false,tStart=0,tMode=null,pinchD=0;
+    //      two-finger pinch zooms AND (in 3D mode) drags the pair sideways
+    //      to orbit — the same combined pinch+twist feel as a map app ----
+    let tStartX=0,tStartY=0,tLastX=0,tLastY=0,tMoved=false,tStart=0,tMode=null,pinchD=0,pinchMidX=0;
     const rel=(t)=>{ const r=cv.getBoundingClientRect(); return {x:t.clientX-r.left,y:t.clientY-r.top}; };
     const touchDist=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     cv.addEventListener("touchstart",(ev)=>{
@@ -3702,6 +3718,7 @@ class UIManager{
         tMoved=false; tStart=performance.now(); tMode="pan";
       } else if(ev.touches.length===2){
         tMode="pinch"; pinchD=touchDist(ev.touches[0],ev.touches[1]);
+        pinchMidX=(ev.touches[0].clientX+ev.touches[1].clientX)/2;
       }
     },{passive:false});
     cv.addEventListener("touchmove",(ev)=>{
@@ -3712,14 +3729,17 @@ class UIManager{
         const midY=(ev.touches[0].clientY+ev.touches[1].clientY)/2;
         const r=cv.getBoundingClientRect(), sx=midX-r.left, sy=midY-r.top;
         const f=d/(pinchD||d);
-        if(g.renderer.mode==="iso"){ this._isoZoomBy(f,sx,sy); pinchD=d; }
-        else {
+        if(g.renderer.mode==="iso"){
+          this._isoZoomBy(f,sx,sy);
+          orbitBy(midX-pinchMidX);          // slide two fingers sideways to orbit
+        } else {
           const before=g.camera.screenToTile(sx,sy);
           g.camera.zoom=clamp(g.camera.zoom*f,g.camera.minZoom,g.camera.maxZoom);
           const after=g.camera.screenToTile(sx,sy);
           g.camera.x+=(before.x-after.x)*CONFIG.TILE; g.camera.y+=(before.y-after.y)*CONFIG.TILE;
-          pinchD=d; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
+          g.camera.clampCam(g.renderer.cw,g.renderer.ch);
         }
+        pinchD=d; pinchMidX=midX;
       } else if(ev.touches.length===1){
         const t=ev.touches[0], dx=t.clientX-tLastX, dy=t.clientY-tLastY;
         if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6) tMoved=true;
@@ -3790,7 +3810,7 @@ class UIManager{
     document.getElementById("btn-3d").classList.toggle("active",on);
     document.getElementById("tiltctrl").classList.toggle("hidden",!on);
     document.getElementById("hint").textContent = on
-      ? "3D Block View — drag to pan · ⟲⟳ to rotate · scroll to zoom · click to use power"
+      ? "3D Block View — drag to pan · right-drag/⟲⟳ to orbit · scroll to zoom"
       : "Blank canvas — paint terrain & place life · Middle-drag pan · Scroll zoom";
     this.toast(on ? "🧊 3D Block View" : "🗺️ Flat Map View");
   }
