@@ -381,7 +381,7 @@ body{
 @media(max-width:860px){
   #app{
     grid-template-columns:1fr;
-    grid-template-rows:44px 1fr;
+    grid-template-rows:auto 1fr;   /* top bar may wrap to two rows */
     grid-template-areas:"top" "center";
     gap:3px; padding:3px;
   }
@@ -396,30 +396,35 @@ body{
   #rightpanel.open{ transform:translateX(0); }
   #m-scrim{ position:fixed; inset:0; z-index:35; background:rgba(0,0,0,.5); }
   #m-scrim.show{ display:block; }
-  /* floating round toggles */
+  /* floating round toggles — kept ABOVE the drawers (z 40) so the button
+     that opened a drawer stays visible and tappable to close it again */
   .m-toggle{
     display:flex; align-items:center; justify-content:center;
-    position:absolute; bottom:14px; z-index:32; width:48px; height:48px;
+    position:fixed; bottom:14px; z-index:45; width:48px; height:48px;
     font-size:22px; border-radius:50%; border:2px solid var(--border);
     background:var(--panel); color:var(--text); box-shadow:0 3px 10px rgba(0,0,0,.5);
   }
   .m-toggle:active{ transform:scale(.92); }
   #m-powers{ left:12px; }
   #m-realms{ right:12px; }
-  /* denser top bar that can scroll if needed */
-  #topbar{ padding:0 5px; gap:4px; overflow-x:auto; }
+  /* top bar WRAPS into two rows in portrait (stats row + controls row) so
+     Pause/speed/Earth/Reset are always on screen instead of overflowing
+     off the right edge with no scroll affordance */
+  #topbar{ padding:3px 5px; gap:4px; row-gap:3px; flex-wrap:wrap; height:auto; min-height:40px; }
   .stat{ padding:3px 6px; font-size:11px; }
   .ctrlbtn{ padding:5px 7px; }
+  #seasonPill{ padding:3px 7px; font-size:10px; }
   /* lift zoom controls above the ⚡ toggle so they don't overlap in the corner */
   #zoomctrl{ left:12px; bottom:74px; gap:6px; }
   #zoomctrl button{ width:42px; height:42px; font-size:18px; }
   #hint{ display:none; }
   .tool{ padding:9px 3px; }        /* bigger touch targets */
   .tool .ti{ font-size:20px; }
-  #kingdomPanel{ bottom:70px; }
+  #kingdomPanel{ bottom:70px; max-width:calc(100vw - 24px); }
 }
 @media(max-width:520px){
   .stat.food,.stat:nth-child(5){ display:none; }  /* trim the busiest stats */
+  .ctrlbtn{ padding:5px 6px; font-size:10px; }
 }
 </style>
 </head>
@@ -3365,16 +3370,27 @@ class UIManager{
     },{passive:false});
 
     // ---- mobile drawer toggles ----
+    // The floating ⚡/📜 buttons stay on top of an open drawer (see CSS
+    // z-index) and flip to a ✕ while "their" drawer is open, so closing is
+    // always one obvious tap — previously the drawer covered its own button.
     const scrim=document.getElementById("m-scrim");
+    const syncToggles=()=>{
+      const pOpen=document.getElementById("leftpanel").classList.contains("open");
+      const rOpen=document.getElementById("rightpanel").classList.contains("open");
+      document.getElementById("m-powers").textContent = pOpen?"✕":"⚡";
+      document.getElementById("m-realms").textContent = rOpen?"✕":"📜";
+    };
     const closeDrawers=()=>{ document.getElementById("leftpanel").classList.remove("open");
-      document.getElementById("rightpanel").classList.remove("open"); scrim.classList.remove("show"); };
+      document.getElementById("rightpanel").classList.remove("open"); scrim.classList.remove("show"); syncToggles(); };
     document.getElementById("m-powers").addEventListener("click",()=>{
       const p=document.getElementById("leftpanel"), open=p.classList.contains("open");
       closeDrawers(); if(!open){ p.classList.add("open"); scrim.classList.add("show"); }
+      syncToggles();
     });
     document.getElementById("m-realms").addEventListener("click",()=>{
       const p=document.getElementById("rightpanel"), open=p.classList.contains("open");
       closeDrawers(); if(!open){ p.classList.add("open"); scrim.classList.add("show"); }
+      syncToggles();
     });
     scrim.addEventListener("click",closeDrawers);
     // picking a tool on mobile closes the powers drawer so you can play
