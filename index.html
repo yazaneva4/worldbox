@@ -169,6 +169,8 @@ body{
 /* colour-key the category swatch bar */
 .cat-nature   .tool.active{border-color:var(--success);box-shadow:0 0 0 1px var(--success),0 2px 0 rgba(0,0,0,.4)}
 .cat-disaster .tool.active{border-color:var(--danger); box-shadow:0 0 0 1px var(--danger), 0 2px 0 rgba(0,0,0,.4)}
+.cat-play     .tool.active{border-color:var(--gold);   box-shadow:0 0 0 1px var(--gold),   0 2px 0 rgba(0,0,0,.4)}
+.cat-play     .tool.active .tn{color:var(--gold)}
 
 /* brush controls */
 #brushbox{
@@ -245,6 +247,66 @@ body{
   opacity:0;transition:opacity .3s;pointer-events:none;max-width:80%;text-align:center;
 }
 #toast.show{opacity:1}
+
+/* ====================  PLAY AS (possession) HUD  ========================= */
+body.playing #world{cursor:pointer}
+#playhud{
+  position:absolute;left:10px;top:10px;z-index:9;width:208px;
+  background:linear-gradient(180deg,#2f333b,#24272d);
+  border:2px solid var(--accent);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.55);overflow:hidden;font-size:11px;
+  max-width:calc(100vw - 20px);
+}
+#playhud.hidden{display:none}
+.ph-head{display:flex;align-items:center;gap:7px;padding:7px 8px;background:rgba(0,0,0,.28)}
+.ph-ico{font-size:20px;line-height:1}
+.ph-name{font-weight:bold;font-size:12.5px;color:var(--text);max-width:102px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-sub{font-size:8.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;
+  max-width:102px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph-tools{margin-left:auto;display:flex;gap:4px}
+.ph-tools button{
+  background:var(--panel-3);border:1px solid var(--border);border-radius:4px;
+  color:var(--text-dim);font-size:11px;line-height:1;padding:5px 6px;cursor:pointer;
+}
+.ph-tools button:hover{color:var(--text);border-color:var(--accent)}
+.ph-bars{padding:7px 8px 3px;display:flex;flex-direction:column;gap:4px}
+.ph-bar{position:relative;height:10px;background:#191b20;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.ph-bar > i{display:block;height:100%;width:0;transition:width .12s linear}
+.ph-bar > span{position:absolute;inset:0;font-size:7.5px;line-height:10px;text-align:center;color:#e6ecf5;letter-spacing:.5px}
+#ph-food{background:var(--gold)}
+#ph-mana{background:#8f6dff}
+.ph-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px 8px;padding:3px 9px 6px;font-size:9.5px;color:var(--text-dim)}
+.ph-stats b{color:var(--text)}
+.ph-act{padding:0 8px 8px;display:flex;gap:5px}
+.ph-act button{
+  flex:1;background:var(--panel-3);border:2px solid var(--border);border-radius:5px;
+  color:var(--text);font-size:10px;padding:6px 2px;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.ph-act button:hover{border-color:var(--accent)}
+.ph-act button:active{transform:translateY(1px)}
+.ph-keys{padding:5px 8px;background:rgba(0,0,0,.22);font-size:8.5px;color:var(--text-dim);
+  line-height:1.5;border-top:1px solid var(--border)}
+.ph-keys b{color:var(--accent)}
+
+/* thumb-stick + action buttons — shown on touch devices while possessing */
+#playpad{position:absolute;inset:0;z-index:12;display:none;pointer-events:none}
+#pp-stick{
+  position:absolute;left:14px;bottom:74px;width:110px;height:110px;border-radius:50%;
+  background:rgba(20,21,26,.5);border:2px solid var(--border);
+  pointer-events:auto;touch-action:none;
+}
+#pp-knob{
+  position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+  border-radius:50%;background:rgba(79,195,247,.8);border:2px solid #0d2b38;display:block;
+}
+#pp-btns{position:absolute;right:14px;bottom:74px;display:flex;flex-direction:column;gap:10px;pointer-events:auto}
+#pp-btns button{
+  width:62px;height:62px;border-radius:50%;font-size:25px;
+  background:var(--panel);color:var(--text);border:2px solid var(--accent);
+  box-shadow:0 3px 10px rgba(0,0,0,.5);touch-action:none;
+}
+#pp-btns button:active{transform:scale(.92)}
 
 /* welcome / onboarding overlay */
 #welcome{
@@ -421,7 +483,17 @@ body{
   .tool{ padding:9px 3px; }        /* bigger touch targets */
   .tool .ti{ font-size:20px; }
   #kingdomPanel{ bottom:70px; max-width:calc(100vw - 24px); }
+  /* possession: the thumb pad replaces keyboard + on-panel action buttons,
+     and takes over the corner the zoom buttons normally occupy */
+  #playpad.on{ display:block; }
+  body.playing #zoomctrl{ display:none; }
+  #playhud{ left:6px; top:6px; width:196px; }
+  /* keep the 🎯/✕ buttons on screen: the name yields width, not the controls */
+  .ph-name,.ph-sub{ max-width:84px; }
+  .ph-act,.ph-keys{ display:none; }
 }
+/* touch-capable desktops/tablets get the thumb pad too */
+body.coarse #playpad.on{ display:block; }
 @media(max-width:520px){
   .stat.food,.stat:nth-child(5){ display:none; }  /* trim the busiest stats */
   .ctrlbtn{ padding:5px 6px; font-size:10px; }
@@ -497,6 +569,42 @@ body{
       <div class="kp-rows" id="kp-rows"></div>
     </div>
 
+    <!-- Play-As HUD: shown while you inhabit a creature. Vitals of the body
+         you're steering, its signature ability, and the way back out. -->
+    <div id="playhud" class="hidden">
+      <div class="ph-head">
+        <span class="ph-ico" id="ph-ico">🎮</span>
+        <div>
+          <div class="ph-name" id="ph-name">—</div>
+          <div class="ph-sub" id="ph-sub">—</div>
+        </div>
+        <div class="ph-tools">
+          <button id="ph-centre" title="Re-centre the camera on you">🎯</button>
+          <button id="ph-exit" title="Release this body (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="ph-bars">
+        <div class="ph-bar"><i id="ph-hp"></i><span id="ph-hplab">HP</span></div>
+        <div class="ph-bar"><i id="ph-food"></i><span id="ph-foodlab">FED</span></div>
+        <div class="ph-bar" id="ph-manarow"><i id="ph-mana"></i><span id="ph-manalab">MANA</span></div>
+      </div>
+      <div class="ph-stats" id="ph-stats"></div>
+      <div class="ph-act">
+        <button id="ph-attack" title="Attack a foe in reach, or work the tile you stand on (Space)">⚔️ Action</button>
+        <button id="ph-abil" title="Signature ability (Q)">✨ Ability</button>
+      </div>
+      <div class="ph-keys"><b>WASD</b>/arrows move · <b>Space</b> action · <b>Q</b> ability · click the map to walk · <b>Esc</b> release</div>
+    </div>
+
+    <!-- Touch controls for possession: thumb stick + action buttons -->
+    <div id="playpad">
+      <div id="pp-stick"><i id="pp-knob"></i></div>
+      <div id="pp-btns">
+        <button id="pp-abil" title="Ability">✨</button>
+        <button id="pp-act" title="Action">⚔️</button>
+      </div>
+    </div>
+
     <!-- Welcome / onboarding overlay: the world starts empty; the player
          chooses to build on a blank canvas or roll a random world. -->
     <div id="welcome">
@@ -519,6 +627,9 @@ body{
           <b>How to play:</b> pick one of <b>Your Powers</b> on the left, then click the world.
           Paint <b>Grass &amp; Trees</b> to make land habitable, drop <b>Humans</b> or <b>Elves</b>, then press
           <b>▶ Play</b> and watch villages grow into kingdoms. Unleash <b>Disasters</b> to test them.
+          <br><b>Play As:</b> tired of watching? Drop in as a <b>Villager, Knight, Archmage, Musketeer,
+          Elf Ranger, Warchief, Revenant</b> or <b>Great Beast</b> — or <b>Possess</b> anyone already alive —
+          and walk your world yourself.
         </div>
       </div>
     </div>
@@ -1075,6 +1186,10 @@ class Entity{
     this.role      = "civilian";       // civilian | worker | soldier | mage | leader
     this.equipment = null;             // "musket" | "staff" | null → combat & sprite
     this.mana      = 0;                // spell resource for casters
+    this.maxHp     = 100;              // health ceiling (heroes carry more)
+    this.maxMana   = 0;                // mana ceiling (0 = not a caster)
+    this.player    = false;            // true while the player is steering this body
+    this.hero      = null;             // HEROES key when spawned via "Play As"
     this.attack    = 6;                // base melee damage
     this.range     = 0;                // >0 = ranged/caster attack radius
     this.xp        = 0;                // veterancy toward legendary units
@@ -1350,6 +1465,7 @@ class EntityManager{
     return e;
   }
   remove(e){
+    if(e.player) this.game.player.onEntityGone(e,false);
     const i=this.list.indexOf(e);
     if(i>=0)this.list.splice(i,1);
     if(e.settlement){
@@ -1379,7 +1495,12 @@ class EntityManager{
       const undead = e.race===RACE.SKELETON;
       if(!undead){
         const foodShort = e.settlement ? e.settlement.res.food<=0 : true;
-        e.hunger += (e.settlement? (foodShort?4:-6) : 2.2);
+        let dh = (e.settlement? (foodShort?4:-6) : 2.2);
+        // A body the player is steering burns its stores far more slowly: a
+        // wandering AI nomad may starve in a minute, but you need time to
+        // actually look for food instead of dying before you can react.
+        if(e.player && dh>0) dh *= e.hero?0.15:0.3;
+        e.hunger += dh;
         if(this.game.sim.season===3) e.hunger += 0.6; // winter bites
         const starveResist = e.has("hardy")?0.5:1;    // Sturdy resist starvation
         e.hunger = clamp(e.hunger,0,120);
@@ -1400,6 +1521,9 @@ class EntityManager{
         this._onDeath(e); this.list.splice(i,1); continue;
       }
 
+      // --- the body the player inhabits answers to them, not to its AI ---
+      if(e.player){ this.game.player.drive(e); continue; }
+
       // --- race behaviour (decision AI throttled; movement always runs) ---
       if(stride===1 || (e.id%stride)===phase){
         switch(e.race){
@@ -1415,6 +1539,7 @@ class EntityManager{
   }
 
   _onDeath(e){
+    if(e.player) this.game.player.onEntityGone(e,true);   // the god snaps back out
     const s=e.settlement;
     if(e.isLeader && s && !s.destroyed){
       this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.kingdom.dynasty} mourns.`,"death");
@@ -2765,9 +2890,11 @@ class Renderer{
     // Level-of-detail: only draw the chunky pixel-art character when zoomed in
     // enough to see it; otherwise a cheap coloured dot keeps huge crowds fast.
     const detailed = cam.zoom>=0.85;
+    const me = this.game.player ? this.game.player.entity : null;
     for(const e of this.game.entities.list){
       const px=e.x*T, py=e.y*T;
       if(px<camx-T||py<camy-T||px>camx+vw+T||py>camy+vh+T) continue; // cull
+      if(e===me) this._playerMark(ctx,e,px,py);
       if(detailed) this._drawChar(ctx,e,px,py);
       else {
         const col=this._raceColor(e);
@@ -2777,6 +2904,25 @@ class Renderer{
         if(e.isLeader){ ctx.fillStyle="#ffcf5c"; ctx.fillRect(px-1.5,py-s-1.5,3,1); }
       }
     }
+  }
+
+  /* Halo, chevron and name over the creature the player is currently steering,
+     so "you" are never lost in a crowd of thousands. */
+  _playerMark(ctx,e,px,py){
+    const t=this.frame*0.09, r=5+Math.sin(t)*1;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(px,py+0.6,r,r*0.5,0,0,7);
+    ctx.fillStyle="rgba(79,195,247,0.20)"; ctx.fill();
+    ctx.strokeStyle="rgba(79,195,247,0.95)"; ctx.lineWidth=0.9; ctx.stroke();
+    const bob=Math.sin(t*1.6)*0.9, ty=py-14+bob;
+    ctx.fillStyle="#4fc3f7";
+    ctx.beginPath(); ctx.moveTo(px-2.6,ty); ctx.lineTo(px+2.6,ty); ctx.lineTo(px,ty+3); ctx.closePath(); ctx.fill();
+    if(this.game.camera.zoom>=1.1){
+      ctx.font="4.5px monospace"; ctx.textAlign="center";
+      ctx.fillStyle="rgba(0,0,0,0.7)"; ctx.fillText(e.name,px+0.4,ty-1.6);
+      ctx.fillStyle="#dff3ff";        ctx.fillText(e.name,px,ty-2);
+    }
+    ctx.restore();
   }
 
   /* A chunky WorldBox-style pixel humanoid rendered from the creature's own
@@ -2974,6 +3120,7 @@ class Renderer{
   _cursor(ctx){
     const g=this.game;
     if(!g.ui.hoverTile || this.globeAlpha()>0.5) return;
+    if(g.player && g.player.active && g.ui.tool!=="possess" && !HEROES[g.ui.tool]) return; // you're a body, not a brush
     const {x,y}=g.ui.hoverTile;
     const T=CONFIG.TILE, r=g.ui.brush;
     ctx.strokeStyle="rgba(255,255,255,0.6)";
@@ -3103,7 +3250,454 @@ class Renderer{
 /* ==========================================================================
    15.  TOOL DEFINITIONS  (god powers)
    ========================================================================== */
+/* ==========================================================================
+   15b. PLAY AS  —  step out of the sky and into a single body
+        Possession suspends ONE creature's AI and hands its movement, attacks
+        and signature ability to the player. Everything else in the world keeps
+        simulating around you: your town still farms, wars still march, and if
+        your body dies you snap back to being a god.
+   ========================================================================== */
+
+/* Playable archetypes. "Play As" spawns one of these and possesses it at once;
+   each has its own stats, reach and signature ability. Ordinary creatures can
+   also be possessed as they are with the Possess power. */
+const HEROES = {
+  play_villager:{icon:"🧑",name:"Villager", race:RACE.HUMAN,   role:"civilian",faction:FACTION.NEUTRAL,
+    hp:130,attack:9, range:0,speed:1.15,mana:0, equip:null,
+    abil:{key:"settle",name:"Found / Plant",hint:"Found your own village on good ground — or plant life where you stand."}},
+  play_knight:{icon:"⚔️",name:"Knight",     race:RACE.HUMAN,   role:"soldier", faction:FACTION.NEUTRAL,
+    hp:200,attack:24,range:0,speed:1.10,mana:0, equip:null,
+    abil:{key:"rally",name:"Rally",hint:"Heal and hearten every kinsman around you."}},
+  play_mage:{icon:"🧙",name:"Archmage",     race:RACE.HUMAN,   role:"mage",    faction:FACTION.MAGIC,
+    hp:140,attack:22,range:5,speed:1.05,mana:40,equip:"staff",
+    abil:{key:"summon",name:"Summon",hint:"Raise a skeleton to fight at your side (15 mana)."}},
+  play_gunner:{icon:"⚙️",name:"Musketeer",  race:RACE.HUMAN,   role:"soldier", faction:FACTION.TECH,
+    hp:150,attack:21,range:6,speed:1.10,mana:0, equip:"musket",
+    abil:{key:"volley",name:"Volley",hint:"Fire on every foe within musket range at once."}},
+  play_elf:{icon:"🧝",name:"Elf Ranger",    race:RACE.ELF,     role:"soldier", faction:FACTION.NEUTRAL,
+    hp:140,attack:17,range:4,speed:1.25,mana:0, equip:null,
+    abil:{key:"grove",name:"Wildgrowth",hint:"A grove of trees springs up around you."}},
+  play_orc:{icon:"👹",name:"Orc Warchief",  race:RACE.ORC,     role:"soldier", faction:FACTION.NEUTRAL,
+    hp:220,attack:28,range:0,speed:1.30,mana:0, equip:null,
+    abil:{key:"roar",name:"War Roar",hint:"Smash every creature around you."}},
+  play_skeleton:{icon:"💀",name:"Revenant", race:RACE.SKELETON,role:"soldier", faction:FACTION.MAGIC,
+    hp:160,attack:20,range:0,speed:1.20,mana:0, equip:null,
+    abil:{key:"roar",name:"Bone Storm",hint:"Shatter every creature around you."}},
+  play_monster:{icon:"🐉",name:"Great Beast",race:RACE.MONSTER,role:"soldier", faction:FACTION.NEUTRAL,
+    hp:300,attack:34,range:0,speed:1.50,mana:0, equip:null,
+    abil:{key:"roar",name:"Terror",hint:"Rend every creature around you. You can cross water."}},
+};
+const HERO_IDS = Object.keys(HEROES);
+
+/* Held-key → direction. Both WASD and the arrow cluster drive the same vector. */
+const MOVE_KEYS = {
+  KeyW:[0,-1], ArrowUp:[0,-1],  KeyS:[0,1], ArrowDown:[0,1],
+  KeyA:[-1,0], ArrowLeft:[-1,0], KeyD:[1,0], ArrowRight:[1,0],
+};
+
+class PlayerController{
+  constructor(game){
+    this.game=game;
+    this.entity=null;             // the body you're steering (null = you're a god)
+    this.keys=new Set();          // held movement key codes
+    this.stick={x:0,y:0};         // virtual thumb-stick vector (touch)
+    this.moveTx=null; this.moveTy=null;   // click-to-walk destination
+    this.follow=true;             // camera tracks you until you pan away
+    this.cool=0; this.abilCd=0;   // action / ability cooldowns (ticks)
+    this.kills=0;
+    this._starveWarned=false;
+  }
+  get active(){ return !!this.entity; }
+
+  /* ---- entering & leaving a body --------------------------------------- */
+  possess(e){
+    if(!e) return false;
+    const g=this.game;
+    if(this.entity && this.entity!==e) this._detach(false);
+    this.entity=e;
+    e.player=true; e.state="player"; e.job="idle";
+    e.tx=e.x|0; e.ty=e.y|0;
+    this.moveTx=this.moveTy=null;
+    this.keys.clear(); this.stick.x=this.stick.y=0;
+    this.cool=this.abilCd=0; this.kills=0; this.follow=true; this._starveWarned=false;
+    document.body.classList.add("playing");
+    document.getElementById("playhud").classList.remove("hidden");
+    document.getElementById("playpad").classList.add("on");
+    if(g.sim.paused) g.sim.togglePause();          // time must flow for you to move
+    if(g.camera.zoom<1.3) g.camera.zoom=1.6;       // drop out of map view into the body
+    this.centre(true);
+    g.chronicle.log(`🎮 You step into the body of <b>${e.name}</b> the ${this.title()}.`,"epic");
+    g.chronicle.achieve("first_possess","🎮","Made Flesh","A god walks the world in mortal skin.");
+    g.ui.toast(`🎮 Playing as ${e.name} — move with WASD / the thumb stick`);
+    this.updateHUD();
+    return true;
+  }
+
+  /* Possess whatever creature was clicked (nearest within a few tiles). */
+  possessAt(cx,cy){
+    const g=this.game;
+    let best=null,bd=9;                             // 3-tile grab radius
+    for(const o of g.entities.list){
+      const d=dist2(cx+0.5,cy+0.5,o.x,o.y);
+      if(d<bd){ bd=d; best=o; }
+    }
+    if(!best){ g.ui.toast("No creature there — click directly on one"); return false; }
+    return this.possess(best);
+  }
+
+  /* Spawn one of the playable archetypes and immediately take its controls. */
+  spawnHero(key,cx,cy){
+    const g=this.game, h=HEROES[key];
+    if(!h) return false;
+    const t=g.world.get(cx,cy);
+    if(!t || (!t.walkable && h.race!==RACE.MONSTER)){ g.ui.toast("You cannot be born there"); return false; }
+    const e=g.entities.spawn(h.race,cx,cy);
+    if(!e){ g.ui.toast("The world is too crowded for another soul"); return false; }
+    e.faction=h.faction; e.role=h.role; e.equipment=h.equip;
+    e.maxHp=h.hp; e.hp=h.hp; e.attack=h.attack; e.range=h.range;
+    e.speed=h.speed; e.mana=h.mana; e.maxMana=h.mana;
+    e.maxAge=Math.max(e.maxAge,140);                // heroes are not felled by a birthday
+    e.traits=[...g.ui.spawnTraits]; e.invalidateTraits();
+    e.name=rulerName(); e.hero=key;
+    return this.possess(e);
+  }
+
+  release(msg){
+    if(!this.entity){ this._hideUI(); return; }
+    this._detach(true);
+    if(msg) this.game.ui.toast(msg);
+  }
+  _detach(log){
+    const e=this.entity;
+    this.entity=null;
+    this.keys.clear(); this.stick.x=this.stick.y=0; this.moveTx=this.moveTy=null;
+    if(e){ e.player=false; e.state="wander"; e.job="idle"; e.tx=e.x|0; e.ty=e.y|0; }
+    this._hideUI();
+    if(log && e) this.game.chronicle.log(`🕊️ You leave <b>${e.name}</b> to their own fate.`,"info");
+  }
+  _hideUI(){
+    document.body.classList.remove("playing");
+    const h=document.getElementById("playhud"); if(h) h.classList.add("hidden");
+    const p=document.getElementById("playpad"); if(p) p.classList.remove("on");
+  }
+  /* The world was rebuilt (Reset / Generate) — every body is gone. */
+  hardReset(){ this.entity=null; this.keys.clear(); this.stick.x=this.stick.y=0;
+    this.moveTx=this.moveTy=null; this._hideUI(); }
+
+  /* Called when the body you inhabit is removed from the world. */
+  onEntityGone(e,died){
+    if(this.entity!==e) return;
+    const name=e.name, was=this.title();
+    this._detach(false);
+    if(died){
+      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You are a god once more.`,"death");
+      this.game.ui.toast(`☠️ ${name} has fallen — you are a god again`);
+    }
+  }
+
+  /* ---- per-tick control, run in place of the creature's own AI ---------- */
+  drive(e){
+    const g=this.game, w=g.world;
+    if(this.cool>0) this.cool--;
+    if(this.abilCd>0) this.abilCd--;
+    if(e.maxMana>0) e.mana=Math.min(e.maxMana,e.mana+0.5);
+    // a hero you are steering knits their wounds while fed
+    if(e.hero && e.hunger<80 && e.hp<e.maxHp) e.hp=Math.min(e.maxHp,e.hp+0.5);
+    // one warning when the body starts to starve — food is a keypress away
+    if(e.race!==RACE.SKELETON){
+      if(e.hunger>=85 && !this._starveWarned){
+        this._starveWarned=true;
+        g.ui.toast("🍖 You are starving — stand on a bush, flower or farm and use Action");
+      } else if(e.hunger<55) this._starveWarned=false;
+    }
+
+    // movement: keys / thumb-stick take priority over a click-to-walk target
+    let vx=0,vy=0;
+    for(const code of this.keys){ const m=MOVE_KEYS[code]; if(m){ vx+=m[0]; vy+=m[1]; } }
+    vx+=this.stick.x; vy+=this.stick.y;
+    const mag=Math.hypot(vx,vy);
+    const onRoad=(w.get(e.x|0,e.y|0)||{}).structure===STRUCT.ROAD;
+    const spd=e.speed*(1+Math.max(0,e.mod("speed")))*(onRoad?1.5:1)*1.2;
+    const step=(spd*0.9)/CONFIG.BASE_TPS;
+    if(mag>0.12){
+      this.moveTx=this.moveTy=null;
+      this._move(e,(vx/mag)*step,(vy/mag)*step);
+    } else if(this.moveTx!=null){
+      const gx=this.moveTx+0.5, gy=this.moveTy+0.5;
+      const dx=gx-e.x, dy=gy-e.y, d=Math.hypot(dx,dy);
+      if(d<=step){ e.x=gx; e.y=gy; this.moveTx=this.moveTy=null; }
+      else if(!this._move(e,dx/d*step,dy/d*step)) this.moveTx=this.moveTy=null; // blocked
+    }
+    e.tx=e.x|0; e.ty=e.y|0;   // keep the AI fields in step so nothing snaps you back
+  }
+  /* Step, sliding along walls: try the full move, then each axis on its own. */
+  _move(e,dx,dy){
+    const w=this.game.world, swims=e.race===RACE.MONSTER;
+    for(const [ax,ay] of [[dx,dy],[dx,0],[0,dy]]){
+      if(!ax && !ay) continue;
+      const nx=e.x+ax, ny=e.y+ay;
+      if(nx<0.2||ny<0.2||nx>w.w-0.2||ny>w.h-0.2) continue;
+      const t=w.get(nx|0,ny|0);
+      if(t && (t.walkable||swims)){ e.x=nx; e.y=ny; return true; }
+    }
+    return false;
+  }
+  walkTo(x,y){
+    const e=this.entity; if(!e) return;
+    const t=this.game.world.get(x,y);
+    if(!t) return;
+    if(!t.walkable && e.race!==RACE.MONSTER){ this.game.ui.toast("You cannot walk there"); return; }
+    this.moveTx=x; this.moveTy=y;
+    this.keys.clear(); this.stick.x=this.stick.y=0; this.follow=true;
+  }
+
+  /* ---- actions ---------------------------------------------------------- */
+  /* Primary action: strike a foe in reach; otherwise work the ground you're
+     standing on; otherwise (deliberately) strike whoever is right beside you. */
+  action(){
+    const e=this.entity; if(!e || this.cool>0) return;
+    const g=this.game, w=g.world;
+    const reach=e.range>0?e.range:1.3;
+    let best=null,bd=reach*reach;
+    for(const o of this._nearby(e,Math.max(2,Math.ceil(reach)))){
+      if(o===e) continue;
+      const d=dist2(e.x,e.y,o.x,o.y);
+      if(d<bd && this.isFoe(o)){ bd=d; best=o; }
+    }
+    if(best){ this._strike(e,best); return; }
+    if(this._work(e,w)) return;
+    // nothing to fight or harvest — swing at the closest creature in arm's reach
+    let vic=null,vd=1.8;
+    for(const o of this._nearby(e,2)){
+      if(o===e) continue;
+      const d=dist2(e.x,e.y,o.x,o.y); if(d<vd){ vd=d; vic=o; }
+    }
+    if(vic) this._strike(e,vic);
+  }
+  _strike(e,o){
+    const g=this.game;
+    o.hp-=e.attack; e.xp++;
+    this.cool=e.range>0?3:2;
+    if(e.role==="mage") e.mana=Math.max(0,e.mana-2);
+    const col=e.role==="mage"?"#c58cff":(e.equipment==="musket"?"#ffe08a":"#ff5c5c");
+    g.effects.spawn("hit",o.x,o.y,col);
+    if(e.range>0) g.effects.spawn(e.role==="mage"?"bolt":"shot",e.x,e.y,col,0,o.x,o.y);
+    if(o.hp<=0) this.kills++;
+  }
+  /* Chop, gather, mine — or tear down a building that isn't yours. */
+  _work(e,w){
+    const g=this.game, x=e.x|0, y=e.y|0, t=w.get(x,y);
+    if(!t) return false;
+    if(t.resource===RES.TREE||t.resource===RES.PINE){
+      t.health-=40;
+      if(t.health<=0){ t.resource=RES.NONE; w.markDirty(x,y); }
+      if(e.settlement) e.settlement.res.wood+=3;
+      g.effects.spawn("chip",x+0.5,y+0.5,"#c9a06a"); this.cool=2; return true;
+    }
+    if(t.resource===RES.BUSH||t.resource===RES.FLOWER||t.structure===STRUCT.FARM){
+      if(e.settlement) e.settlement.res.food+=3;
+      e.hunger=clamp(e.hunger-45,0,120);
+      if(t.resource!==RES.NONE && Math.random()<0.5){ t.resource=RES.NONE; w.markDirty(x,y); }
+      g.effects.spawn("chip",x+0.5,y+0.5,"#7ed957"); this.cool=2; return true;
+    }
+    if(t.resource===RES.STONE||t.biome===BIOME.ROCK){
+      if(e.settlement) e.settlement.res.stone+=2;
+      if(t.resource===RES.STONE && Math.random()<0.4){ t.resource=RES.NONE; w.markDirty(x,y); }
+      g.effects.spawn("chip",x+0.5,y+0.5,"#b9bfc9"); this.cool=2; return true;
+    }
+    if(t.structure!==STRUCT.NONE && t.structure!==STRUCT.ROAD && t.structure!==STRUCT.RUIN){
+      const s=g.settlements.list.find(z=>z.id===t.owner);
+      if(!(s && e.settlement===s)){          // never wreck your own town
+        t.health-=e.attack*1.5; this.cool=2;
+        g.effects.spawn("hit",x+0.5,y+0.5,"#ff9f4f");
+        if(t.health<=0) g.settlements.destroyStructure(x,y);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* Signature ability — what it does depends on who you are. */
+  ability(){
+    const e=this.entity; if(!e) return;
+    if(this.abilCd>0){ this.game.ui.toast("Not ready yet"); return; }
+    const g=this.game, w=g.world;
+    switch(this.abilityKey()){
+      case "summon":{
+        if(e.mana<15){ g.ui.toast("✨ Not enough mana"); return; }
+        e.mana-=15;
+        const sk=g.entities.spawn(RACE.SKELETON,e.x,e.y);
+        if(sk){
+          const k=e.kingdom;
+          sk.allyKing = k?k.id:-1;                 // -1 = bound to you, not to a realm
+          sk.faction=e.faction;
+          g.effects.spawn("bolt",e.x,e.y,"#c58cff");
+          g.ui.toast("💀 A skeleton rises to serve you");
+        }
+        this.abilCd=18; break;
+      }
+      case "rally":{
+        let n=0;
+        for(const o of this._nearby(e,6)){
+          if(o===e || !o.kingdom || !e.kingdom || o.kingdom!==e.kingdom) continue;
+          if(dist2(e.x,e.y,o.x,o.y)>36) continue;
+          o.hp=Math.min(o.maxHp,o.hp+25); n++;
+          g.effects.spawn("chip",o.x,o.y,"#7ed957");
+        }
+        e.hp=Math.min(e.maxHp,e.hp+20);
+        g.ui.toast(n?`🛡️ You rally ${n} of your kin`:"🛡️ You steel yourself");
+        this.abilCd=24; break;
+      }
+      case "volley":{
+        const r=e.range||5; let n=0;
+        for(const o of this._nearby(e,Math.ceil(r))){
+          if(o===e || !this.isFoe(o)) continue;
+          if(dist2(e.x,e.y,o.x,o.y)>r*r) continue;
+          o.hp-=e.attack; n++;
+          g.effects.spawn("shot",e.x,e.y,"#ffe08a",0,o.x,o.y);
+          g.effects.spawn("hit",o.x,o.y,"#ffe08a");
+          if(o.hp<=0) this.kills++;
+        }
+        g.ui.toast(n?`🔫 Your volley strikes ${n}`:"🔫 Nothing in your sights");
+        this.abilCd=22; break;
+      }
+      case "grove":{
+        let n=0;
+        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+          const x=(e.x|0)+dx, y=(e.y|0)+dy, t=w.get(x,y);
+          if(t && t.walkable && t.resource===RES.NONE && t.structure===STRUCT.NONE){
+            t.resource=RES.TREE; t.health=60; w.markDirty(x,y); n++;
+          }
+        }
+        g.effects.spawn("chip",e.x,e.y,"#7ed957");
+        g.ui.toast(n?`🌳 Wildgrowth — ${n} trees spring up`:"🌳 No room to grow here");
+        this.abilCd=20; break;
+      }
+      case "roar":{
+        let n=0;
+        for(const o of this._nearby(e,3)){
+          if(o===e || dist2(e.x,e.y,o.x,o.y)>9) continue;
+          o.hp-=e.attack*0.8; n++;
+          g.effects.spawn("hit",o.x,o.y,"#ff5c5c");
+          if(o.hp<=0) this.kills++;
+        }
+        g.camera.shake(6);
+        g.ui.toast(n?`💥 Your roar tears through ${n}`:"💥 Your roar echoes over empty ground");
+        this.abilCd=20; break;
+      }
+      default:{ // "settle" — carve out your own realm, or seed life underfoot
+        const x=e.x|0, y=e.y|0, t=w.get(x,y);
+        if(!e.settlement && t && t.walkable && t.structure===STRUCT.NONE && t.fertility>0.35){
+          const s=g.settlements.found(e);
+          if(s){ g.ui.toast(`🏛️ You found ${s.name} — and crown yourself its ruler`);
+            g.ui.renderKingdoms(); this.abilCd=30; this.updateHUD(); break; }
+        }
+        if(t && t.walkable && t.resource===RES.NONE && t.structure===STRUCT.NONE){
+          t.resource=Math.random()<0.7?RES.TREE:RES.FLOWER; t.health=50; w.markDirty(x,y);
+          g.effects.spawn("chip",x+0.5,y+0.5,"#7ed957");
+          g.ui.toast("🌱 Life takes root at your feet"); this.abilCd=6;
+        } else g.ui.toast("Nothing to plant here");
+      }
+    }
+  }
+
+  /* ---- queries & labels ------------------------------------------------- */
+  _nearby(e,r){
+    const g=this.game;
+    const hit=g.entities.near(e.x,e.y,r);
+    // the spatial hash is rebuilt each tick; before the first one, scan directly
+    return hit.length?hit:g.entities.list;
+  }
+  isFoe(o){
+    const e=this.entity; if(!e||o===e) return false;
+    const feral = o.race===RACE.MONSTER || (o.race===RACE.ORC&&!o.settlement) ||
+                  (o.race===RACE.SKELETON&&!o.allyKing);
+    // monstrous bodies count everything unlike them as prey
+    if(e.race===RACE.ORC||e.race===RACE.MONSTER||e.race===RACE.SKELETON) return o.race!==e.race;
+    if(feral) return true;
+    const mk=e.kingdom, ok=o.kingdom;
+    return !!(mk && ok && mk!==ok && mk.atWar.has(ok.id));
+  }
+  abilityKey(){
+    const e=this.entity; if(!e) return "settle";
+    const h=HEROES[e.hero]; if(h) return h.abil.key;
+    if(e.role==="mage") return "summon";
+    if(e.race===RACE.ORC||e.race===RACE.MONSTER||e.race===RACE.SKELETON) return "roar";
+    if(e.role==="soldier"||e.role==="leader") return "rally";
+    if(e.race===RACE.ELF) return "grove";
+    return "settle";
+  }
+  abilityName(){
+    const e=this.entity; if(!e) return "Ability";
+    const h=HEROES[e.hero]; if(h) return h.abil.name;
+    return {summon:"Summon",rally:"Rally",roar:"Roar",grove:"Wildgrowth",settle:"Found / Plant"}[this.abilityKey()];
+  }
+  title(){
+    const e=this.entity; if(!e) return "—";
+    const h=HEROES[e.hero]; if(h) return h.name;
+    const race=e.race.charAt(0).toUpperCase()+e.race.slice(1);
+    const role={leader:"Ruler",soldier:"Warrior",mage:"Mage",worker:"Worker",civilian:"Villager"}[e.role]||"Villager";
+    return `${race} ${role}`;
+  }
+  icon(){
+    const e=this.entity; if(!e) return "🎮";
+    const h=HEROES[e.hero]; if(h) return h.icon;
+    return {human:"🧑",elf:"🧝",orc:"👹",skeleton:"💀",monster:"🐉"}[e.race]||"🧑";
+  }
+
+  /* ---- camera & HUD ----------------------------------------------------- */
+  centre(instant){
+    const e=this.entity, g=this.game;
+    if(!e || !g.renderer || !g.renderer.cw) return;
+    const T=CONFIG.TILE, cam=g.camera;
+    const tx=e.x*T - g.renderer.cw/(2*cam.zoom);
+    const ty=e.y*T - g.renderer.ch/(2*cam.zoom);
+    if(instant){ cam.x=tx; cam.y=ty; }
+    else { cam.x+=(tx-cam.x)*0.18; cam.y+=(ty-cam.y)*0.18; }
+    cam.clampCam(g.renderer.cw,g.renderer.ch);
+  }
+  updateCamera(){ if(this.entity && this.follow) this.centre(false); }
+
+  updateHUD(){
+    const e=this.entity; if(!e) return;
+    const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+    set("ph-ico",this.icon());
+    set("ph-name",e.name);
+    set("ph-sub",`${this.title()} · ${e.kingdom?e.kingdom.name:"Wanderer"}`);
+    const hpPct=clamp(e.hp/e.maxHp*100,0,100), hpBar=document.getElementById("ph-hp");
+    hpBar.style.width=hpPct+"%";
+    hpBar.style.background = hpPct>55?"var(--success)":hpPct>25?"var(--gold)":"var(--danger)";
+    set("ph-hplab",`HP ${Math.max(0,Math.round(e.hp))}/${e.maxHp}`);
+    const fed=clamp(100-e.hunger,0,100), undead=e.race===RACE.SKELETON;
+    const foodBar=document.getElementById("ph-food");
+    foodBar.style.width=(undead?100:fed)+"%";
+    foodBar.style.background = undead?"#8a8f99":(fed>40?"var(--gold)":"var(--danger)");
+    set("ph-foodlab", undead?"UNDEAD — NEVER HUNGRY":`FED ${Math.round(fed)}%`);
+    const row=document.getElementById("ph-manarow");
+    if(e.maxMana>0){
+      row.style.display="";
+      document.getElementById("ph-mana").style.width=clamp(e.mana/e.maxMana*100,0,100)+"%";
+      set("ph-manalab",`MANA ${Math.round(e.mana)}/${e.maxMana}`);
+    } else row.style.display="none";
+    document.getElementById("ph-stats").innerHTML=
+      `<span>Age <b>${Math.floor(e.age)}</b></span><span>Kills <b>${this.kills}</b></span>`+
+      `<span>Attack <b>${Math.round(e.attack)}</b></span>`+
+      `<span>${e.range>0?`Range <b>${e.range}</b>`:"Reach <b>melee</b>"}</span>`;
+    const ab=this.abilityName(), btn=document.getElementById("ph-abil");
+    if(btn){ btn.textContent=`✨ ${ab}`; btn.title=ab; }
+    const pad=document.getElementById("pp-abil"); if(pad) pad.title=ab;
+  }
+}
+
 const TOOLS = [
+  {cat:"Play As",cls:"cat-play",items:[
+    {id:"possess",icon:"👁️",name:"Possess",desc:"<b>Possess</b> — click any creature to slip into its body and steer it yourself. <b>WASD</b> move · <b>Space</b> action · <b>Q</b> ability · <b>Esc</b> release."},
+    ...HERO_IDS.map(id=>{
+      const h=HEROES[id];
+      return {id,icon:h.icon,name:h.name,
+        desc:`<b>Play as ${h.name}</b> — ${h.race}${h.role!=="civilian"?" · "+h.role:""}, ${h.hp} HP, ${h.attack} attack${h.range>0?`, range ${h.range}`:""}. <b>${h.abil.name}</b>: ${h.abil.hint} Click the map to be born there.`};
+    }),
+  ]},
   {cat:"Nature",cls:"cat-nature",items:[
     {id:"grass",  icon:"🌿",name:"Grass",  desc:"<b>Grass</b> — paint fertile grassland. Life flourishes here."},
     {id:"tree",   icon:"🌳",name:"Trees",  desc:"<b>Trees</b> — grow forests that provide wood and shelter."},
@@ -3275,12 +3869,16 @@ class UIManager{
 
     const applyAt=(sx,sy)=>{
       const {x,y}=g.camera.screenToTile(sx,sy);
+      // While you inhabit a body, clicking the world walks you there instead of
+      // casting a power — except the Play As powers, which leap you to a new one.
+      if(g.player.active && this.tool!=="possess" && !HEROES[this.tool]){ g.player.walkTo(x,y); return; }
       this.applyTool(x,y);
     };
 
     cv.addEventListener("mousedown",(ev)=>{
       const r=cv.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top;
-      if(ev.button===1 || ev.button===2){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault(); }
+      if(ev.button===1 || ev.button===2){ panning=true; lastX=ev.clientX; lastY=ev.clientY; ev.preventDefault();
+        g.player.follow=false; }   // panning by hand detaches the follow-cam
       else if(ev.button===0){
         // select settlement if clicking near a town hall & using a non-painting inspect? -> left always paints
         painting=true; applyAt(sx,sy);
@@ -3318,15 +3916,35 @@ class UIManager{
 
     // keyboard shortcuts
     window.addEventListener("keydown",(ev)=>{
+      if(ev.target && /^(input|textarea|select)$/i.test(ev.target.tagName)) return;
+      const P=g.player;
+      // ---- possession takes the keyboard: WASD walks, tool letters are off ----
+      if(P.active){
+        if(MOVE_KEYS[ev.code]){ P.keys.add(ev.code); P.follow=true; ev.preventDefault(); return; }
+        if(ev.code==="Space"){ ev.preventDefault(); P.action(); return; }
+        if(ev.code==="KeyQ"||ev.code==="KeyE"){ ev.preventDefault(); P.ability(); return; }
+        if(ev.key==="Escape"){ P.release("🕊️ You are a god once more"); return; }
+        if(ev.code==="KeyP"){ g.sim.togglePause(); return; }
+        if(ev.code==="KeyC"){ P.follow=true; P.centre(true); return; }
+        if(ev.key==="1")g.sim.setSpeed(1);
+        else if(ev.key==="2")g.sim.setSpeed(2);
+        else if(ev.key==="5")g.sim.setSpeed(5);
+        else if(ev.key==="+"||ev.key==="=")this._zoomBy(1.2);
+        else if(ev.key==="-")this._zoomBy(0.83);
+        return;
+      }
       if(ev.code==="Space"){ ev.preventDefault(); g.sim.togglePause(); }
       else if(ev.key==="1")g.sim.setSpeed(1);
       else if(ev.key==="2")g.sim.setSpeed(2);
       else if(ev.key==="5")g.sim.setSpeed(5);
       else if(ev.key==="+"||ev.key==="=")this._zoomBy(1.2);
       else if(ev.key==="-")this._zoomBy(0.83);
-      const map={g:"grass",t:"tree",f:"flower",w:"water",h:"human",o:"orc",e:"elf",m:"monster"};
+      const map={g:"grass",t:"tree",f:"flower",w:"water",h:"human",o:"orc",e:"elf",m:"monster",p:"possess"};
       if(map[ev.key]) this.selectTool(map[ev.key]);
     });
+    window.addEventListener("keyup",(ev)=>{ g.player.keys.delete(ev.code); });
+    // a lost focus must not leave a key "stuck down" and walk you off a cliff
+    window.addEventListener("blur",()=>{ g.player.keys.clear(); });
 
     // ---- TOUCH input (mobile): 1-finger drag pans, tap uses the tool,
     //      two-finger pinch zooms around the pinch midpoint ----
@@ -3356,7 +3974,7 @@ class UIManager{
         pinchD=d; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       } else if(ev.touches.length===1){
         const t=ev.touches[0], dx=t.clientX-tLastX, dy=t.clientY-tLastY;
-        if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6) tMoved=true;
+        if(Math.abs(t.clientX-tStartX)+Math.abs(t.clientY-tStartY)>6){ tMoved=true; g.player.follow=false; }
         g.camera.x-=dx/g.camera.zoom; g.camera.y-=dy/g.camera.zoom;
         tLastX=t.clientX; tLastY=t.clientY; g.camera.clampCam(g.renderer.cw,g.renderer.ch);
       }
@@ -3368,6 +3986,39 @@ class UIManager{
       }
       if(ev.touches.length===0) tMode=null;
     },{passive:false});
+
+    // ---- Play As: HUD buttons + on-screen thumb stick ----
+    const press=(id,fn)=>{
+      const b=document.getElementById(id); if(!b) return;
+      // pointerdown fires once for mouse, pen and touch alike — no ghost clicks
+      b.addEventListener("pointerdown",(ev)=>{ ev.preventDefault(); fn(); });
+    };
+    press("ph-attack",()=>g.player.action());
+    press("ph-abil",  ()=>g.player.ability());
+    press("pp-act",   ()=>g.player.action());
+    press("pp-abil",  ()=>g.player.ability());
+    press("ph-exit",  ()=>g.player.release("🕊️ You are a god once more"));
+    press("ph-centre",()=>{ g.player.follow=true; g.player.centre(true); });
+
+    const stick=document.getElementById("pp-stick"), knob=document.getElementById("pp-knob");
+    let stickId=null;
+    const stickSet=(ev)=>{
+      const r=stick.getBoundingClientRect();
+      const R=r.width/2-10;
+      const dx=ev.clientX-(r.left+r.width/2), dy=ev.clientY-(r.top+r.height/2);
+      const d=Math.hypot(dx,dy)||1, nx=dx/d, ny=dy/d, pull=Math.min(d,R);
+      knob.style.transform=`translate(${nx*pull}px,${ny*pull}px)`;
+      const mag=Math.min(1,d/R);
+      g.player.stick.x=nx*mag; g.player.stick.y=ny*mag;
+      if(mag>0.15) g.player.follow=true;
+    };
+    const stickEnd=()=>{ stickId=null; knob.style.transform="translate(0,0)";
+      g.player.stick.x=0; g.player.stick.y=0; };
+    stick.addEventListener("pointerdown",(ev)=>{ ev.preventDefault(); stickId=ev.pointerId;
+      if(stick.setPointerCapture) stick.setPointerCapture(ev.pointerId); stickSet(ev); });
+    stick.addEventListener("pointermove",(ev)=>{ if(stickId===ev.pointerId) stickSet(ev); });
+    stick.addEventListener("pointerup",  (ev)=>{ if(stickId===ev.pointerId) stickEnd(); });
+    stick.addEventListener("pointercancel",()=>stickEnd());
 
     // ---- mobile drawer toggles ----
     // The floating ⚡/📜 buttons stay on top of an open drawer (see CSS
@@ -3421,6 +4072,9 @@ class UIManager{
     if(!w.inBounds(cx,cy)) return;
     // Inspect: select the realm owning the clicked tile (or the nearest capital)
     if(this.tool==="inspect"){ this._inspectAt(cx,cy); return; }
+    // Play As: step into an existing creature, or be born as a chosen archetype
+    if(this.tool==="possess"){ g.player.possessAt(cx,cy); return; }
+    if(HEROES[this.tool]){ g.player.spawnHero(this.tool,cx,cy); return; }
     const r=this.brush;
     const single = ["volcano","meteor","quake","lightning","human","orc","elf","monster","mage","industrial","skeleton"].includes(this.tool);
 
@@ -3640,6 +4294,7 @@ class Game{
     this.effects=new EffectManager(this);
     this.camera=new Camera(this);
     this.sim=new SimulationManager(this);
+    this.player=new PlayerController(this);   // "Play As" — must exist before the UI binds
 
     // build the very first world as a BLANK canvas (the sandbox starts empty)
     this._buildWorld("blank");
@@ -3676,6 +4331,7 @@ class Game{
     else { setNameRng(makeRNG(this.seed)); this.world.blank(); }
 
     // world-scoped managers are rebuilt so nothing leaks between worlds
+    if(this.player) this.player.hardReset();   // the body you inhabited no longer exists
     this.entities=new EntityManager(this);
     this.settlements=new SettlementManager(this);
     this.disasters=new DisasterManager(this);
@@ -3818,12 +4474,14 @@ class Game{
     // continuous / cosmetic updates
     this.camera.update(dt);
     this.effects.update(dt);
+    this.player.updateCamera();      // follow-cam glides after the body you steer
 
     // render
     this.renderer.render();
 
     // HUD every frame (cheap); heavier panels throttled + only when visible
     this.ui.updateHUD();
+    if(this.player.active) this.player.updateHUD();
     this._kingdomsCd-=dt;
     if(this._kingdomsCd<=0){
       if(document.getElementById("page-kingdoms").classList.contains("active")) this.ui.renderKingdoms();
@@ -3837,7 +4495,11 @@ class Game{
 /* --------------------------------------------------------------------------
    18.  BOOT
    -------------------------------------------------------------------------- */
-window.addEventListener("load",()=>{ window.GAME=new Game(); });
+window.addEventListener("load",()=>{
+  // touch-first devices get the on-screen thumb stick while possessing
+  if(window.matchMedia && window.matchMedia("(pointer:coarse)").matches) document.body.classList.add("coarse");
+  window.GAME=new Game();
+});
 </script>
 </body>
 </html>
