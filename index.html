@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Pixel Creator Simulator — Sandbox Civilization Engine</title>
+<title>Pixel Sandbox Simulator — Civilization Engine</title>
 <style>
 /* ============================================================================
-   PIXEL CREATOR SIMULATOR  —  Global Styling
+   PIXEL SANDBOX SIMULATOR  —  Global Styling
    Premium retro-fantasy aesthetic. All layout via CSS grid for a responsive
    desktop experience. Colours pulled from the requested palette.
    ========================================================================== */
@@ -609,8 +609,8 @@ body.coarse #playpad.on{ display:block; }
          chooses to build on a blank canvas or roll a random world. -->
     <div id="welcome">
       <div class="wbox">
-        <h1 class="pixel">⚡ Pixel Creator Simulator</h1>
-        <p class="wsub">Your world begins as an empty canvas. You are the Creator — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
+        <h1 class="pixel">⚡ Pixel Sandbox Simulator</h1>
+        <p class="wsub">Your world begins as an empty canvas. This world is yours — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
         <div class="wbtns">
           <button id="w-blank" class="wbtn primary">
             <span class="wi">🗺️</span>
@@ -652,7 +652,7 @@ body.coarse #playpad.on{ display:block; }
 <script>
 "use strict";
 /* ==========================================================================
-   PIXEL CREATOR SIMULATOR
+   PIXEL SANDBOX SIMULATOR
    A WorldBox-inspired sandbox civilization engine, in a single file.
 
    Architecture (clean separation of concerns):
@@ -1539,7 +1539,7 @@ class EntityManager{
   }
 
   _onDeath(e){
-    if(e.player) this.game.player.onEntityGone(e,true);   // the Creator snaps back out
+    if(e.player) this.game.player.onEntityGone(e,true);   // you snap back out of the body
     const s=e.settlement;
     if(e.isLeader && s && !s.destroyed){
       this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.kingdom.dynasty} mourns.`,"death");
@@ -3255,7 +3255,7 @@ class Renderer{
         Possession suspends ONE creature's AI and hands its movement, attacks
         and signature ability to the player. Everything else in the world keeps
         simulating around you: your town still farms, wars still march, and if
-        your body dies you snap back to being the Creator.
+        your body dies you snap straight back out of it.
    ========================================================================== */
 
 /* Playable archetypes. "Play As" spawns one of these and possesses it at once;
@@ -3298,7 +3298,7 @@ const MOVE_KEYS = {
 class PlayerController{
   constructor(game){
     this.game=game;
-    this.entity=null;             // the body you're steering (null = you're the Creator)
+    this.entity=null;             // the body you're steering (null = not in one)
     this.keys=new Set();          // held movement key codes
     this.stick={x:0,y:0};         // virtual thumb-stick vector (touch)
     this.moveTx=null; this.moveTy=null;   // click-to-walk destination
@@ -3327,7 +3327,7 @@ class PlayerController{
     if(g.camera.zoom<1.3) g.camera.zoom=1.6;       // drop out of map view into the body
     this.centre(true);
     g.chronicle.log(`🎮 You step into the body of <b>${e.name}</b> the ${this.title()}.`,"epic");
-    g.chronicle.achieve("first_possess","🎮","Made Flesh","The Creator walks the world in mortal skin.");
+    g.chronicle.achieve("first_possess","🎮","Made Flesh","You walked your own world in mortal skin.");
     g.ui.toast(`🎮 Playing as ${e.name} — move with WASD / the thumb stick`);
     this.updateHUD();
     return true;
@@ -3390,8 +3390,8 @@ class PlayerController{
     const name=e.name, was=this.title();
     this._detach(false);
     if(died){
-      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You are the Creator once more.`,"death");
-      this.game.ui.toast(`☠️ ${name} has fallen — you are the Creator again`);
+      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You step back out of the world.`,"death");
+      this.game.ui.toast(`☠️ ${name} has fallen — you step back out of the world`);
     }
   }
 
@@ -3923,7 +3923,7 @@ class UIManager{
         if(MOVE_KEYS[ev.code]){ P.keys.add(ev.code); P.follow=true; ev.preventDefault(); return; }
         if(ev.code==="Space"){ ev.preventDefault(); P.action(); return; }
         if(ev.code==="KeyQ"||ev.code==="KeyE"){ ev.preventDefault(); P.ability(); return; }
-        if(ev.key==="Escape"){ P.release("🕊️ You are the Creator once more"); return; }
+        if(ev.key==="Escape"){ P.release("🕊️ You step back out of the world"); return; }
         if(ev.code==="KeyP"){ g.sim.togglePause(); return; }
         if(ev.code==="KeyC"){ P.follow=true; P.centre(true); return; }
         if(ev.key==="1")g.sim.setSpeed(1);
@@ -3997,7 +3997,7 @@ class UIManager{
     press("ph-abil",  ()=>g.player.ability());
     press("pp-act",   ()=>g.player.action());
     press("pp-abil",  ()=>g.player.ability());
-    press("ph-exit",  ()=>g.player.release("🕊️ You are the Creator once more"));
+    press("ph-exit",  ()=>g.player.release("🕊️ You step back out of the world"));
     press("ph-centre",()=>{ g.player.follow=true; g.player.centre(true); });
 
     const stick=document.getElementById("pp-stick"), knob=document.getElementById("pp-knob");
