@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Pixel God Simulator — Sandbox Civilization Engine</title>
+<title>Pixel Creator Simulator — Sandbox Civilization Engine</title>
 <style>
 /* ============================================================================
-   PIXEL GOD SIMULATOR  —  Global Styling
+   PIXEL CREATOR SIMULATOR  —  Global Styling
    Premium retro-fantasy aesthetic. All layout via CSS grid for a responsive
    desktop experience. Colours pulled from the requested palette.
    ========================================================================== */
@@ -111,7 +111,7 @@ body{
 .ctrlbtn.danger:hover{background:var(--danger);color:#2a0808}
 .ctrlbtn.play.active{background:var(--success);color:#0c2a08;border-color:#4f9e34}
 
-/* ====================  LEFT GOD-POWERS PANEL  ============================= */
+/* ====================  LEFT POWERS PANEL  ================================= */
 #leftpanel{
   grid-area:left;
   background:var(--panel);
@@ -127,13 +127,13 @@ body{
   padding:10px 10px 6px;
   text-shadow:1px 1px 0 #000;
 }
-.godpowers{
+.powerlist{
   flex:1;
   overflow-y:auto;
   padding:0 8px 8px;
 }
-.godpowers::-webkit-scrollbar{width:8px}
-.godpowers::-webkit-scrollbar-thumb{background:var(--panel-3);border-radius:4px}
+.powerlist::-webkit-scrollbar{width:8px}
+.powerlist::-webkit-scrollbar-thumb{background:var(--panel-3);border-radius:4px}
 .category{margin-top:8px}
 .category h2{
   font-size:11px;color:var(--text-dim);
@@ -521,10 +521,10 @@ body.coarse #playpad.on{ display:block; }
     <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the world back to a blank canvas">↻ Reset</button>
   </div>
 
-  <!-- ===================  LEFT GOD POWERS  ============================= -->
+  <!-- ===================  LEFT POWERS PANEL  =========================== -->
   <div id="leftpanel">
     <h1 class="pixel">⚡ Your Powers</h1>
-    <div class="godpowers" id="godpowers"><!-- tools injected by UIManager --></div>
+    <div class="powerlist" id="powerlist"><!-- tools injected by UIManager --></div>
     <div id="culturebox">
       <div class="cbtitle">🧬 Culture <span class="cbhint">applied to new civilizations</span></div>
       <div class="cbrow" id="factionRow"><!-- faction path buttons --></div>
@@ -609,8 +609,8 @@ body.coarse #playpad.on{ display:block; }
          chooses to build on a blank canvas or roll a random world. -->
     <div id="welcome">
       <div class="wbox">
-        <h1 class="pixel">⚡ Pixel God Simulator</h1>
-        <p class="wsub">Your world begins as an empty canvas. You are the god — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
+        <h1 class="pixel">⚡ Pixel Creator Simulator</h1>
+        <p class="wsub">Your world begins as an empty canvas. You are the Creator — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
         <div class="wbtns">
           <button id="w-blank" class="wbtn primary">
             <span class="wi">🗺️</span>
@@ -652,7 +652,7 @@ body.coarse #playpad.on{ display:block; }
 <script>
 "use strict";
 /* ==========================================================================
-   PIXEL GOD SIMULATOR
+   PIXEL CREATOR SIMULATOR
    A WorldBox-inspired sandbox civilization engine, in a single file.
 
    Architecture (clean separation of concerns):
@@ -663,7 +663,7 @@ body.coarse #playpad.on{ display:block; }
      • DisasterManager       -> lightning/fire/acid/meteor/earthquake
      • EffectManager         -> transient visual animations
      • Renderer              -> draws terrain/resources/structures/entities/fx
-     • UIManager             -> god-power panel, HUD, chronicle, input
+     • UIManager             -> powers panel, HUD, chronicle, input
      • Chronicle             -> emergent-storytelling event log & achievements
      • Game                  -> wires everything together, owns the main loop
    ========================================================================== */
@@ -1539,7 +1539,7 @@ class EntityManager{
   }
 
   _onDeath(e){
-    if(e.player) this.game.player.onEntityGone(e,true);   // the god snaps back out
+    if(e.player) this.game.player.onEntityGone(e,true);   // the Creator snaps back out
     const s=e.settlement;
     if(e.isLeader && s && !s.destroyed){
       this.game.chronicle.log(`⚰️ ${e.name}, ruler of ${s.name}, has died. The ${s.kingdom.dynasty} mourns.`,"death");
@@ -2305,7 +2305,7 @@ class SettlementManager{
 }
 
 /* ==========================================================================
-   11.  DISASTER MANAGER  —  god-tier destruction, all animated
+   11.  DISASTER MANAGER  —  cataclysmic destruction, all animated
    ========================================================================== */
 class DisasterManager{
   constructor(game){ this.game=game; this.fires=[]; this.acid=[]; }
@@ -3248,14 +3248,14 @@ class Renderer{
 }
 
 /* ==========================================================================
-   15.  TOOL DEFINITIONS  (god powers)
+   15.  TOOL DEFINITIONS  (your powers)
    ========================================================================== */
 /* ==========================================================================
    15b. PLAY AS  —  step out of the sky and into a single body
         Possession suspends ONE creature's AI and hands its movement, attacks
         and signature ability to the player. Everything else in the world keeps
         simulating around you: your town still farms, wars still march, and if
-        your body dies you snap back to being a god.
+        your body dies you snap back to being the Creator.
    ========================================================================== */
 
 /* Playable archetypes. "Play As" spawns one of these and possesses it at once;
@@ -3298,7 +3298,7 @@ const MOVE_KEYS = {
 class PlayerController{
   constructor(game){
     this.game=game;
-    this.entity=null;             // the body you're steering (null = you're a god)
+    this.entity=null;             // the body you're steering (null = you're the Creator)
     this.keys=new Set();          // held movement key codes
     this.stick={x:0,y:0};         // virtual thumb-stick vector (touch)
     this.moveTx=null; this.moveTy=null;   // click-to-walk destination
@@ -3327,7 +3327,7 @@ class PlayerController{
     if(g.camera.zoom<1.3) g.camera.zoom=1.6;       // drop out of map view into the body
     this.centre(true);
     g.chronicle.log(`🎮 You step into the body of <b>${e.name}</b> the ${this.title()}.`,"epic");
-    g.chronicle.achieve("first_possess","🎮","Made Flesh","A god walks the world in mortal skin.");
+    g.chronicle.achieve("first_possess","🎮","Made Flesh","The Creator walks the world in mortal skin.");
     g.ui.toast(`🎮 Playing as ${e.name} — move with WASD / the thumb stick`);
     this.updateHUD();
     return true;
@@ -3390,8 +3390,8 @@ class PlayerController{
     const name=e.name, was=this.title();
     this._detach(false);
     if(died){
-      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You are a god once more.`,"death");
-      this.game.ui.toast(`☠️ ${name} has fallen — you are a god again`);
+      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You are the Creator once more.`,"death");
+      this.game.ui.toast(`☠️ ${name} has fallen — you are the Creator again`);
     }
   }
 
@@ -3731,7 +3731,7 @@ const TOOLS = [
 ];
 
 /* ==========================================================================
-   16.  UI MANAGER  —  HUD, god-power panel, chronicle, and all input
+   16.  UI MANAGER  —  HUD, powers panel, chronicle, and all input
    ========================================================================== */
 class UIManager{
   constructor(game){
@@ -3796,9 +3796,9 @@ class UIManager{
     this.spawnTraits.add(id); btn.classList.add("on");
   }
 
-  /* --- build the god-power buttons from the TOOLS table ------------------ */
+  /* --- build the power buttons from the TOOLS table ---------------------- */
   _buildPanel(){
-    const host=document.getElementById("godpowers");
+    const host=document.getElementById("powerlist");
     host.innerHTML="";
     for(const group of TOOLS){
       const c=document.createElement("div");
@@ -3923,7 +3923,7 @@ class UIManager{
         if(MOVE_KEYS[ev.code]){ P.keys.add(ev.code); P.follow=true; ev.preventDefault(); return; }
         if(ev.code==="Space"){ ev.preventDefault(); P.action(); return; }
         if(ev.code==="KeyQ"||ev.code==="KeyE"){ ev.preventDefault(); P.ability(); return; }
-        if(ev.key==="Escape"){ P.release("🕊️ You are a god once more"); return; }
+        if(ev.key==="Escape"){ P.release("🕊️ You are the Creator once more"); return; }
         if(ev.code==="KeyP"){ g.sim.togglePause(); return; }
         if(ev.code==="KeyC"){ P.follow=true; P.centre(true); return; }
         if(ev.key==="1")g.sim.setSpeed(1);
@@ -3997,7 +3997,7 @@ class UIManager{
     press("ph-abil",  ()=>g.player.ability());
     press("pp-act",   ()=>g.player.action());
     press("pp-abil",  ()=>g.player.ability());
-    press("ph-exit",  ()=>g.player.release("🕊️ You are a god once more"));
+    press("ph-exit",  ()=>g.player.release("🕊️ You are the Creator once more"));
     press("ph-centre",()=>{ g.player.follow=true; g.player.centre(true); });
 
     const stick=document.getElementById("pp-stick"), knob=document.getElementById("pp-knob");
@@ -4045,7 +4045,7 @@ class UIManager{
     });
     scrim.addEventListener("click",closeDrawers);
     // picking a tool on mobile closes the powers drawer so you can play
-    document.getElementById("godpowers").addEventListener("click",()=>{ if(window.innerWidth<=860) closeDrawers(); });
+    document.getElementById("powerlist").addEventListener("click",()=>{ if(window.innerWidth<=860) closeDrawers(); });
 
     window.addEventListener("resize",()=>{
       g.renderer.resize();
@@ -4066,7 +4066,7 @@ class UIManager{
     g.camera.clampCam(g.renderer.cw,g.renderer.ch);
   }
 
-  /* --- apply the current god power at a tile (respecting brush size) ----- */
+  /* --- apply the current power at a tile (respecting brush size) --------- */
   applyTool(cx,cy){
     const g=this.game, w=g.world;
     if(!w.inBounds(cx,cy)) return;
