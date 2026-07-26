@@ -518,7 +518,7 @@ body.coarse #playpad.on{ display:block; }
     <button class="ctrlbtn pixel" id="btn-s2" data-speed="2">x2</button>
     <button class="ctrlbtn pixel" id="btn-s5" data-speed="5">x5</button>
     <button class="ctrlbtn pixel" id="btn-generate" title="Forge a fresh Earth — continents, oceans & biomes">🌍 Earth</button>
-    <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the world back to a blank canvas">↻ Reset</button>
+    <button class="ctrlbtn danger pixel" id="btn-reset" title="Clear the sandbox back to a blank canvas">↻ Reset</button>
   </div>
 
   <!-- ===================  LEFT POWERS PANEL  =========================== -->
@@ -533,7 +533,7 @@ body.coarse #playpad.on{ display:block; }
     <div id="brushbox">
       <label>Brush <input type="range" id="brushSize" min="0" max="4" value="1"><span id="brushVal">1</span></label>
     </div>
-    <div id="tooldesc">Select one of <b>Your Powers</b> and click the world to shape it.</div>
+    <div id="tooldesc">Select one of <b>Your Powers</b> and click the sandbox to shape it.</div>
   </div>
 
   <!-- ===================  CENTER VIEWPORT  ============================= -->
@@ -610,12 +610,12 @@ body.coarse #playpad.on{ display:block; }
     <div id="welcome">
       <div class="wbox">
         <h1 class="pixel">⚡ Pixel Sandbox Simulator</h1>
-        <p class="wsub">Your world begins as an empty canvas. This world is yours — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
+        <p class="wsub">Your sandbox begins as an empty canvas. It's yours — shape the land, breathe life into it, and watch civilizations rise and fall.</p>
         <div class="wbtns">
           <button id="w-blank" class="wbtn primary">
             <span class="wi">🗺️</span>
             <span class="wt">Blank Canvas</span>
-            <span class="wd">Start from an empty world and build everything yourself.</span>
+            <span class="wd">Start from an empty sandbox and build everything yourself.</span>
           </button>
           <button id="w-gen" class="wbtn">
             <span class="wi">🌍</span>
@@ -624,12 +624,12 @@ body.coarse #playpad.on{ display:block; }
           </button>
         </div>
         <div class="wtips">
-          <b>How to play:</b> pick one of <b>Your Powers</b> on the left, then click the world.
+          <b>How to play:</b> pick one of <b>Your Powers</b> on the left, then click the sandbox.
           Paint <b>Grass &amp; Trees</b> to make land habitable, drop <b>Humans</b> or <b>Elves</b>, then press
           <b>▶ Play</b> and watch villages grow into kingdoms. Unleash <b>Disasters</b> to test them.
           <br><b>Play As:</b> tired of watching? Drop in as a <b>Villager, Knight, Archmage, Musketeer,
           Elf Ranger, Warchief, Revenant</b> or <b>Great Beast</b> — or <b>Possess</b> anyone already alive —
-          and walk your world yourself.
+          and walk your sandbox yourself.
         </div>
       </div>
     </div>
@@ -1917,7 +1917,7 @@ class SettlementManager{
     const fm=FACTION_META[k.faction];
     const cult=k.culture.length? " · "+k.culture.map(c=>TRAITS[c].name).join(", "):"";
     this.game.chronicle.log(`🏛️ ${founderEntity.name} founded <b>${s.name}</b>, seat of the ${fm.icon} ${k.name}${cult}.`,"found");
-    this.game.chronicle.achieve("first_settlement","🏛️","First Light","A civilization takes root in the world.");
+    this.game.chronicle.achieve("first_settlement","🏛️","First Light","A civilization takes root in the sandbox.");
     if(this.activeKingdoms()>=5) this.game.chronicle.achieve("five_realms","🗺️","An Age of Kingdoms","Five kingdoms stand at once.");
     return s;
   }
@@ -2355,7 +2355,7 @@ class DisasterManager{
       this.game.effects.spawn("explosion",x+0.5,y+0.5,"#ffcf5c",r+1);
     });
     this.game.chronicle.log(`☄️ A meteor streaks down and reshapes the earth at (${x},${y})!`,"disaster");
-    this.game.chronicle.achieve("meteor","☄️","Impact Event","A meteor permanently scars the world.");
+    this.game.chronicle.achieve("meteor","☄️","Impact Event","A meteor permanently scars the sandbox.");
   }
 
   earthquake(x,y){
@@ -3327,7 +3327,7 @@ class PlayerController{
     if(g.camera.zoom<1.3) g.camera.zoom=1.6;       // drop out of map view into the body
     this.centre(true);
     g.chronicle.log(`🎮 You step into the body of <b>${e.name}</b> the ${this.title()}.`,"epic");
-    g.chronicle.achieve("first_possess","🎮","Made Flesh","You walked your own world in mortal skin.");
+    g.chronicle.achieve("first_possess","🎮","Made Flesh","You walked your own sandbox in mortal skin.");
     g.ui.toast(`🎮 Playing as ${e.name} — move with WASD / the thumb stick`);
     this.updateHUD();
     return true;
@@ -3352,7 +3352,7 @@ class PlayerController{
     const t=g.world.get(cx,cy);
     if(!t || (!t.walkable && h.race!==RACE.MONSTER)){ g.ui.toast("You cannot be born there"); return false; }
     const e=g.entities.spawn(h.race,cx,cy);
-    if(!e){ g.ui.toast("The world is too crowded for another soul"); return false; }
+    if(!e){ g.ui.toast("The sandbox is too crowded for another soul"); return false; }
     e.faction=h.faction; e.role=h.role; e.equipment=h.equip;
     e.maxHp=h.hp; e.hp=h.hp; e.attack=h.attack; e.range=h.range;
     e.speed=h.speed; e.mana=h.mana; e.maxMana=h.mana;
@@ -3390,8 +3390,8 @@ class PlayerController{
     const name=e.name, was=this.title();
     this._detach(false);
     if(died){
-      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You step back out of the world.`,"death");
-      this.game.ui.toast(`☠️ ${name} has fallen — you step back out of the world`);
+      this.game.chronicle.log(`☠️ <b>${name}</b> the ${was} has fallen. You step back out of the sandbox.`,"death");
+      this.game.ui.toast(`☠️ ${name} has fallen — you step back out of the sandbox`);
     }
   }
 
@@ -3923,7 +3923,7 @@ class UIManager{
         if(MOVE_KEYS[ev.code]){ P.keys.add(ev.code); P.follow=true; ev.preventDefault(); return; }
         if(ev.code==="Space"){ ev.preventDefault(); P.action(); return; }
         if(ev.code==="KeyQ"||ev.code==="KeyE"){ ev.preventDefault(); P.ability(); return; }
-        if(ev.key==="Escape"){ P.release("🕊️ You step back out of the world"); return; }
+        if(ev.key==="Escape"){ P.release("🕊️ You step back out of the sandbox"); return; }
         if(ev.code==="KeyP"){ g.sim.togglePause(); return; }
         if(ev.code==="KeyC"){ P.follow=true; P.centre(true); return; }
         if(ev.key==="1")g.sim.setSpeed(1);
@@ -3997,7 +3997,7 @@ class UIManager{
     press("ph-abil",  ()=>g.player.ability());
     press("pp-act",   ()=>g.player.action());
     press("pp-abil",  ()=>g.player.ability());
-    press("ph-exit",  ()=>g.player.release("🕊️ You step back out of the world"));
+    press("ph-exit",  ()=>g.player.release("🕊️ You step back out of the sandbox"));
     press("ph-centre",()=>{ g.player.follow=true; g.player.centre(true); });
 
     const stick=document.getElementById("pp-stick"), knob=document.getElementById("pp-knob");
@@ -4185,7 +4185,7 @@ class UIManager{
   /* onboarding overlay control — freeze time while the chooser is shown so the
      blank world stays truly static until the player begins. */
   showWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.remove("hidden"); this.game.sim.paused=true; this.syncControls(); }
-  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.game.sim.paused=false; this.syncControls(); this.toast("Pick one of Your Powers and click the world"); }
+  hideWelcome(){ const el=document.getElementById("welcome"); if(el) el.classList.add("hidden"); this.game.sim.paused=false; this.syncControls(); this.toast("Pick one of Your Powers and click the sandbox"); }
 
   /* --- kingdom inspector ------------------------------------------------- */
   _inspectAt(cx,cy){
@@ -4234,7 +4234,7 @@ class UIManager{
   /* --- right-panel renderers --------------------------------------------- */
   renderChronicle(){
     const host=document.getElementById("page-chronicle");
-    if(!this.game.chronicle.entries.length){ host.innerHTML='<div class="empty">The world is young.<br>Place life and shape the land to begin its story.</div>'; return; }
+    if(!this.game.chronicle.entries.length){ host.innerHTML='<div class="empty">The sandbox is young.<br>Place life and shape the land to begin its story.</div>'; return; }
     const items=this.game.chronicle.entries.slice(-80).reverse();
     host.innerHTML=items.map(e=>`<div class="logentry ${e.type}"><span class="yr">Y${e.year}</span>${e.text}</div>`).join("");
     host.scrollTop=0;
@@ -4314,7 +4314,7 @@ class Game{
     this._kingdomsCd=0;
     // Show the onboarding overlay; the world sits empty & waiting behind it.
     this.ui.showWelcome();
-    this.chronicle.log("🌌 An empty world awaits your hand. Shape the land and give it life.","found");
+    this.chronicle.log("🌌 An empty sandbox awaits your hand. Shape the land and give it life.","found");
     requestAnimationFrame(this.loop.bind(this));
   }
 
@@ -4360,7 +4360,7 @@ class Game{
   /* Reset button -> wipe the world back to a blank canvas. */
   reset(){
     this._remake("blank");
-    this.chronicle.log("🌌 The world is wiped clean — a blank canvas once more.","found");
+    this.chronicle.log("🌌 The sandbox is wiped clean — a blank canvas once more.","found");
     this.ui.toast("Cleared to blank canvas");
   }
 
@@ -4375,7 +4375,7 @@ class Game{
   generateFantasy(){
     this._remake("generate");
     this.chronicle.log("🌋 A fantasy world: fire and ash to the west, green life to the east.","found");
-    this.ui.toast("Fantasy world generated");
+    this.ui.toast("Fantasy sandbox generated");
   }
 
   /* --- world-level per-tick upkeep (regrowth, cooling, seasons) ---------- */
@@ -4400,15 +4400,15 @@ class Game{
 
   onSeasonChange(){
     this.ui.updateHUD();
-    if(this.sim.season===3) this.chronicle.log("❄️ Winter descends. Food grows scarce across the world.","info");
+    if(this.sim.season===3) this.chronicle.log("❄️ Winter descends. Food grows scarce across the sandbox.","info");
     else if(this.sim.season===0 && this.sim.year>0) this.chronicle.log("🌱 Spring returns; the land renews itself.","info");
   }
 
   onNewYear(){
     const y=this.sim.year;
     // survival & scale achievements
-    if(this.entities.list.length>=50) this.chronicle.achieve("pop50","👥","A Thriving World","The world's population surpasses 50 souls.");
-    if(y>=100) this.chronicle.achieve("year100","📜","A Century of History","The world endures for 100 years.");
+    if(this.entities.list.length>=50) this.chronicle.achieve("pop50","👥","A Thriving Sandbox","The sandbox's population surpasses 50 souls.");
+    if(y>=100) this.chronicle.achieve("year100","📜","A Century of History","The sandbox endures for 100 years.");
     // legendary heroes: long-lived nomads
     for(const e of this.entities.list){
       if(!e.settlement && e.legendYears>50 && (e.race===RACE.HUMAN||e.race===RACE.ELF)){
